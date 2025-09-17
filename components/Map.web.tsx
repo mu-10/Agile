@@ -1,9 +1,13 @@
-import React from "react";
 import { GoogleMap, Marker, useJsApiLoader } from "@react-google-maps/api";
+import React, { CSSProperties } from "react";
 
 const center = { lat: 57.7089, lng: 11.9746 }; // Gothenburg
 
-export default function MapWeb() {
+type MapWebProps = {
+  style?: CSSProperties;
+};
+
+export default function MapWeb({ style }: MapWebProps) {
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: process.env.EXPO_PUBLIC_MAPS_WEB_KEY!,
   });
@@ -12,7 +16,7 @@ export default function MapWeb() {
   if (!isLoaded) return <div>Loading map…</div>;
 
   return (
-    <div style={{ width: "100%", height: "100vh" }}>
+    <div style={style ? style : { width: "100%", height: "100vh" }}>
       <GoogleMap
         center={center}
         zoom={12}
