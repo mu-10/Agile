@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text } from "react-native";
+import { Text, View } from "react-native";
 import Map from "../components/Map"; // <- correct if components/ is at project root
 
 export default function Index() {
@@ -17,7 +17,7 @@ export default function Index() {
           borderRadius: 8,
         }}
       >
-        <Text style={{ color: "#fff" }}>Diddy was here</Text>
+        <Text style={{ color: "#fff" }}>Diddy was not  here</Text>
       </View>
     </View>
   );
