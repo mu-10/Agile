@@ -7,6 +7,7 @@ export default function Index() {
   // NEW STUFF START
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
+  const [batteryRange, setBatteryRange] = useState(""); 
 
   const onPlan = () => {
     console.log("Start:", start, "End:", end);
@@ -19,14 +20,6 @@ export default function Index() {
       <View style={styles.form}>
         <Text style={styles.title}>Chargify</Text>
 
-        <Text style={styles.label}>Current location</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="e.g. Stockholm"
-          value={start}
-          onChangeText={setStart}
-        />
-
         <Text style={styles.label}>Destination</Text>
         <TextInput
           style={styles.input}
@@ -35,10 +28,22 @@ export default function Index() {
           onChangeText={setEnd}
         />
 
+        <Text style={styles.label}>Battery range (km)</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="e.g. 350"
+          value={batteryRange}
+          onChangeText={setBatteryRange}
+          keyboardType="numeric"
+        />
+
         <Pressable
           onPress={onPlan}
-          style={[styles.button, (!start || !end) && styles.buttonDisabled]}
-          disabled={!start || !end}
+          style={[
+            styles.button,
+            (!start || !end || !batteryRange) && styles.buttonDisabled,
+          ]}
+          disabled={!start || !end || !batteryRange}
         >
           <Text style={styles.buttonText}>Plan Trip</Text>
         </Pressable>
