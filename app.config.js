@@ -1,4 +1,4 @@
-require('dotenv').config();
+require("dotenv").config();
 
 module.exports = ({ config }) => ({
   expo: {
@@ -14,28 +14,28 @@ module.exports = ({ config }) => ({
       supportsTablet: true,
       bundleIdentifier: "com.yourcompany.chargify",
       config: {
-        googleMapsApiKey: process.env.MAPS_IOS_KEY
-      }
+        googleMapsApiKey: process.env.MAPS_IOS_KEY,
+      },
     },
     android: {
       adaptiveIcon: {
         backgroundColor: "#E6F4FE",
         foregroundImage: "./assets/images/android-icon-foreground.png",
         backgroundImage: "./assets/images/android-icon-background.png",
-        monochromeImage: "./assets/images/android-icon-monochrome.png"
+        monochromeImage: "./assets/images/android-icon-monochrome.png",
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
       package: "com.yourcompany.chargify",
       config: {
         googleMaps: {
-          apiKey: process.env.MAPS_ANDROID_KEY
-        }
-      }
+          apiKey: process.env.MAPS_ANDROID_KEY,
+        },
+      },
     },
     web: {
       output: "static",
-      favicon: "./assets/images/favicon.png"
+      favicon: "./assets/images/favicon.png",
     },
     plugins: [
       "expo-router",
@@ -46,16 +46,16 @@ module.exports = ({ config }) => ({
           imageWidth: 200,
           resizeMode: "contain",
           backgroundColor: "#ffffff",
-          dark: { backgroundColor: "#000000" }
-        }
-      ]
+          dark: { backgroundColor: "#000000" },
+        },
+      ],
     ],
     experiments: {
       typedRoutes: true,
-      reactCompiler: true
+      reactCompiler: true,
     },
     extra: {
-      mapsWebKey: process.env.EXPO_PUBLIC_MAPS_WEB_KEY
-    }
-  }
+      mapsWebKey: process.env.EXPO_PUBLIC_MAPS_WEB_KEY,
+    },
+  },
 });
