@@ -20,6 +20,14 @@ export default function Index() {
       <View style={styles.form}>
         <Text style={styles.title}>Chargify</Text>
 
+        <Text style={styles.label}>Current location</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="e.g. Stockholm"
+          value={start}
+          onChangeText={setStart}
+        />
+
         <Text style={styles.label}>Destination</Text>
         <TextInput
           style={styles.input}
