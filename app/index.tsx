@@ -8,9 +8,25 @@ export default function Index() {
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
   const [batteryRange, setBatteryRange] = useState(""); 
+  const [rangeError, setRangeError] = useState(""); // Error state
+
+   const handleRangeChange = (text: string) => {
+    // Only allow numbers
+    if (/^\d*$/.test(text)) {
+      setBatteryRange(text);
+      setRangeError("");
+    } else {
+      setRangeError("Battery range must be a number");
+    }
+  };
 
   const onPlan = () => {
-    console.log("Start:", start, "End:", end);
+    if (!batteryRange || isNaN(Number(batteryRange))) {
+      setRangeError("Please enter a valid number for battery range");
+      return;
+    }
+    setRangeError("");
+    console.log("Start:", start, "End:", end, "Battery Range:", batteryRange);
   };
   // NEW STUFF END
 
@@ -20,7 +36,7 @@ export default function Index() {
       <View style={styles.form}>
         <Text style={styles.title}>Chargify</Text>
 
-        <Text style={styles.label}>Current location</Text>
+        <Text style={styles.label}>From:</Text>
         <TextInput
           style={styles.input}
           placeholder="e.g. Stockholm"
@@ -28,7 +44,7 @@ export default function Index() {
           onChangeText={setStart}
         />
 
-        <Text style={styles.label}>Destination</Text>
+        <Text style={styles.label}>To(Destination):</Text>
         <TextInput
           style={styles.input}
           placeholder="e.g. Gothenburg"
@@ -36,22 +52,25 @@ export default function Index() {
           onChangeText={setEnd}
         />
 
-        <Text style={styles.label}>Battery range (km)</Text>
+       <Text style={styles.label}>Battery range (km)</Text>
         <TextInput
           style={styles.input}
           placeholder="e.g. 350"
           value={batteryRange}
-          onChangeText={setBatteryRange}
+          onChangeText={handleRangeChange}
           keyboardType="numeric"
         />
+        {rangeError ? (
+          <Text style={{ color: "red", marginBottom: 4 }}>{rangeError}</Text>
+        ) : null}
 
-        <Pressable
+         <Pressable
           onPress={onPlan}
           style={[
             styles.button,
-            (!start || !end || !batteryRange) && styles.buttonDisabled,
+            (!start || !end || !batteryRange || !!rangeError) && styles.buttonDisabled,
           ]}
-          disabled={!start || !end || !batteryRange}
+          disabled={!start || !end || !batteryRange || !!rangeError}
         >
           <Text style={styles.buttonText}>Plan Trip</Text>
         </Pressable>
