@@ -1,6 +1,6 @@
-import { GoogleMap, Marker, useJsApiLoader } from "@react-google-maps/api";
+import { GoogleMap, InfoWindow, Marker, useJsApiLoader } from "@react-google-maps/api";
 import React, { useEffect, useState } from "react";
-
+const chargingIcon = "https://i.imgur.com/BeCzKCh.png";
 //const center = { lat: 57.7089, lng: 11.9746 }; // Gothenburg
 
 export default function MapWeb() {
@@ -8,6 +8,7 @@ export default function MapWeb() {
     useState<google.maps.LatLngLiteral | null>(null);
   const [stations, setStations] = useState<any[]>([]);
   const [loadingStations, setLoadingStations] = useState(true);
+  const [selectedStation, setSelectedStation] = useState<any | null>(null);
 
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: process.env.EXPO_PUBLIC_MAPS_WEB_KEY!,
@@ -30,15 +31,12 @@ export default function MapWeb() {
       );
     } else {
       console.error("Geolocation not supported");
-      setCurrentLocation({ lat: 57.7089, lng: 11.9746 }); // fallback
+      setCurrentLocation({ lat: 57.7089, lng: 11.9746 });
     }
   }, []);
 
   useEffect(() => {
-    // Fetch charging stations in Sweden from Open Charge Map
-    fetch(
-      "https://api.openchargemap.io/v3/poi/?output=json&countrycode=SE&maxresults=500"
-    )
+    fetch("http://localhost:3001/api/charging-stations")
       .then((res) => res.json())
       .then((data) => {
         setStations(data);
@@ -56,12 +54,13 @@ export default function MapWeb() {
       {currentLocation && (
         <GoogleMap
           center={currentLocation}
-          zoom={6}
+          zoom={12}
           mapContainerStyle={{ width: "100%", height: "100%" }}
         >
           <Marker position={currentLocation} title="You are here" />
           {/* Charging station markers */}
           {!loadingStations &&
+            Array.isArray(stations) &&
             stations.map((station: any) => (
               <Marker
                 key={station.ID}
@@ -70,8 +69,58 @@ export default function MapWeb() {
                   lng: station.AddressInfo.Longitude,
                 }}
                 title={station.AddressInfo.Title}
+                icon={{
+                  url: chargingIcon,
+                  scaledSize: new window.google.maps.Size(32, 32),
+                }}
+                onClick={() => setSelectedStation(station)}
               />
             ))}
+          {selectedStation && (
+            <InfoWindow
+              position={{
+                lat: selectedStation.AddressInfo.Latitude,
+                lng: selectedStation.AddressInfo.Longitude,
+              }}
+              onCloseClick={() => setSelectedStation(null)}
+            >
+              <div style={{ minWidth: 200 }}>
+                <h4>{selectedStation.AddressInfo.Title}</h4>
+                <p>{selectedStation.AddressInfo.AddressLine1}</p>
+                <p>
+                  {selectedStation.AddressInfo.Town},{" "}
+                  {selectedStation.AddressInfo.StateOrProvince}
+                </p>
+                <p>{selectedStation.AddressInfo.Postcode}</p>
+                {/* Show connection info */}
+                {selectedStation.Connections && selectedStation.Connections.length > 0 && (
+                  <div>
+                    <strong>Chargers:</strong> {selectedStation.Connections.length}
+                    <ul>
+                      {selectedStation.Connections.map((conn: any, idx: number) => (
+                        <li key={idx}>
+                          {conn.ConnectionType?.Title} - {conn.PowerKW ? `${conn.PowerKW} kW` : "N/A"}
+                          {conn.Quantity ? ` (${conn.Quantity}x)` : ""}
+                          {conn.Price ? `, Price: ${conn.Price}` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {selectedStation.AddressInfo.RelatedURL && (
+                  <p>
+                    <a
+                      href={selectedStation.AddressInfo.RelatedURL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      More info
+                    </a>
+                  </p>
+                )}
+              </div>
+            </InfoWindow>
+          )}
         </GoogleMap>
       )}
       {loadingStations && (
