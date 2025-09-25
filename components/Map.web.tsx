@@ -63,18 +63,19 @@ export default function MapWeb() {
             Array.isArray(stations) &&
             stations.map((station: any) => (
               <Marker
-                key={station.ID}
+                key={station.id}
                 position={{
-                  lat: station.AddressInfo.Latitude,
-                  lng: station.AddressInfo.Longitude,
+                  lat: station.latitude,
+                  lng: station.longitude,
                 }}
-                title={station.AddressInfo.Title}
+                title={station.title}
                 icon={{
                   url: chargingIcon,
                   scaledSize: new window.google.maps.Size(32, 32),
                 }}
                 onClick={() => setSelectedStation(station)}
               />
+
             ))}
           {selectedStation && (
             <InfoWindow
@@ -85,8 +86,12 @@ export default function MapWeb() {
               onCloseClick={() => setSelectedStation(null)}
             >
               <div style={{ minWidth: 200 }}>
-                <h4>{selectedStation.AddressInfo.Title}</h4>
-                <p>{selectedStation.AddressInfo.AddressLine1}</p>
+                <h4>{selectedStation.title}</h4>
+                <p>{selectedStation.address}</p>
+                <p>
+                  {selectedStation.town}, {selectedStation.state}
+                </p>
+                <p>{selectedStation.postcode}</p>
                 <p>
                   {selectedStation.AddressInfo.Town},{" "}
                   {selectedStation.AddressInfo.StateOrProvince}
@@ -107,17 +112,17 @@ export default function MapWeb() {
                     </ul>
                   </div>
                 )}
-                {selectedStation.AddressInfo.RelatedURL && (
-                  <p>
-                    <a
-                      href={selectedStation.AddressInfo.RelatedURL}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      More info
-                    </a>
-                  </p>
-                )}
+              {selectedStation.relatedUrl && (
+                <p>
+                  <a
+                    href={selectedStation.relatedUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    More info
+                  </a>
+                </p>
+              )}
               </div>
             </InfoWindow>
           )}
