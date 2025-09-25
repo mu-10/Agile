@@ -10,10 +10,23 @@ import {
 import Map from "../components/Map";
 
 export default function Index() {
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
-  const [batteryRange, setBatteryRange] = useState("");
-  const [rangeError, setRangeError] = useState("");
+  // 🔹 Explicitly typed states
+  const [start, setStart] = useState<string>("");
+  const [end, setEnd] = useState<string>("");
+  const [batteryRange, setBatteryRange] = useState<string>("");
+  const [rangeError, setRangeError] = useState<string>("");
+
+  // 🔹 Fix: typed parameter
+  const handleRangeChange = (text: string) => {
+    const numericValue = text.replace(/[^0-9]/g, ""); // only keep numbers
+    setBatteryRange(numericValue);
+
+    if (numericValue === "") {
+      setRangeError("Range must be a number");
+    } else {
+      setRangeError("");
+    }
+  };
 
   const onPlan = () => {
     if (!batteryRange || isNaN(Number(batteryRange))) {
@@ -28,7 +41,12 @@ export default function Index() {
     <View style={{ flex: 1 }}>
       {/* Unified Search Bar */}
       <View style={styles.toolbar}>
-        <Ionicons name="navigate-outline" size={18} color="#9ca3af" style={styles.icon} />
+        <Ionicons
+          name="navigate-outline"
+          size={18}
+          color="#9ca3af"
+          style={styles.icon}
+        />
         <TextInput
           style={styles.input}
           placeholder="From"
@@ -51,7 +69,7 @@ export default function Index() {
           placeholderTextColor="#9ca3af"
           value={batteryRange}
           keyboardType="numeric"
-          onChangeText={setBatteryRange}
+          onChangeText={handleRangeChange} // ✅ typed
         />
 
         <Pressable
@@ -60,10 +78,16 @@ export default function Index() {
           style={({ pressed }) => [
             styles.button,
             pressed && styles.buttonPressed,
-            (!start || !end || !batteryRange || !!rangeError) && styles.buttonDisabled,
+            (!start || !end || !batteryRange || !!rangeError) &&
+              styles.buttonDisabled,
           ]}
         >
-          <Ionicons name="car-sport-outline" size={16} color="white" style={{ marginRight: 4 }} />
+          <Ionicons
+            name="car-sport-outline"
+            size={16}
+            color="white"
+            style={{ marginRight: 4 }}
+          />
           <Text style={styles.buttonText}>Plan</Text>
         </Pressable>
       </View>
