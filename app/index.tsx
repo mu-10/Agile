@@ -1,38 +1,66 @@
 import { Ionicons } from "@expo/vector-icons"; // for search/plan icon
 import React, { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import Map from "../components/Map.web";
+import MapWeb from "../components/Map.web";
 
 export default function Index() {
-  // 🔹 Explicitly typed states
-  const [start, setStart] = useState<string>("");
+  // 🔹 Input states
+  const [startInput, setStartInput] = useState<string>(""); // shown in input
+  const [startCoords, setStartCoords] = useState<string | null>(null); // lat,lng for directions
   const [end, setEnd] = useState<string>("");
   const [batteryRange, setBatteryRange] = useState<string>("");
   const [rangeError, setRangeError] = useState<string>("");
-  const [location, setLocation] = useState<{
-    lat: number;
-    lng: number;
-  } | null>(null);
 
-  // 🔹 Fix: typed parameter
+  // 🔹 Track GPS location from MapWeb
+  const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
+
+  // 🔹 Handle numeric input
   const handleRangeChange = (text: string) => {
-    const numericValue = text.replace(/[^0-9]/g, ""); // only keep numbers
+    const numericValue = text.replace(/[^0-9]/g, ""); // keep only numbers
     setBatteryRange(numericValue);
-
-    if (numericValue === "") {
-      setRangeError("Range must be a number");
-    } else {
-      setRangeError("");
-    }
+    setRangeError(numericValue === "" ? "Range must be a number" : "");
   };
 
+  // 🔹 Plan button
   const onPlan = () => {
     if (!batteryRange || isNaN(Number(batteryRange))) {
       setRangeError("Please enter a valid number for battery range");
       return;
     }
     setRangeError("");
-    console.log("Start:", start, "End:", end, "Battery Range:", batteryRange);
+
+    console.log(
+      "Start:",
+      startInput,
+      "Coords:",
+      startCoords,
+      "End:",
+      end,
+      "Battery Range:",
+      batteryRange
+    );
+  };
+
+  // 🔹 Fill input with current location on button press
+  const useCurrentLocation = async () => {
+    if (!currentLocation) return;
+    const loc = currentLocation;
+    setStartCoords(`${loc.lat},${loc.lng}`);
+
+    try {
+      const res = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${loc.lat},${loc.lng}&key=YOUR_GOOGLE_MAPS_API_KEY`
+      );
+      const json = await res.json();
+      if (json.results && json.results.length > 0) {
+        setStartInput(json.results[0].formatted_address);
+      } else {
+        setStartInput("Current location");
+      }
+    } catch (err) {
+      console.error("Reverse geocoding failed:", err);
+      setStartInput("Current location");
+    }
   };
 
   return (
@@ -45,14 +73,36 @@ export default function Index() {
           color="#9ca3af"
           style={styles.icon}
         />
-        <TextInput
-          style={styles.input}
-          placeholder="From"
-          placeholderTextColor="#9ca3af"
-          value={start}
-          onChangeText={setStart}
-        />
+
+        {/* From input with location button */}
+        <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+          <TextInput
+            style={[styles.input, { flex: 1 }]}
+            placeholder="From"
+            placeholderTextColor="#9ca3af"
+            value={startInput}
+            onChangeText={(val) => {
+              setStartInput(val);
+              setStartCoords(null); // user typed, ignore GPS coords
+            }}
+          />
+          {currentLocation && (
+            <Pressable
+              onPress={useCurrentLocation}
+              style={{
+                padding: 4,
+                marginLeft: 4,
+                backgroundColor: "#22c55e",
+                borderRadius: 20,
+              }}
+            >
+              <Ionicons name="location-outline" size={20} color="white" />
+            </Pressable>
+          )}
+        </View>
+
         <View style={styles.divider} />
+
         <TextInput
           style={styles.input}
           placeholder="To"
@@ -60,23 +110,25 @@ export default function Index() {
           value={end}
           onChangeText={setEnd}
         />
+
         <View style={styles.divider} />
+
         <TextInput
           style={styles.input}
           placeholder="Range km"
           placeholderTextColor="#9ca3af"
           value={batteryRange}
           keyboardType="numeric"
-          onChangeText={handleRangeChange} // ✅ typed
+          onChangeText={handleRangeChange}
         />
 
         <Pressable
           onPress={onPlan}
-          disabled={!start || !end || !batteryRange || !!rangeError}
+          disabled={!startInput || !end || !batteryRange || !!rangeError}
           style={({ pressed }) => [
             styles.button,
             pressed && styles.buttonPressed,
-            (!start || !end || !batteryRange || !!rangeError) &&
+            (!startInput || !end || !batteryRange || !!rangeError) &&
               styles.buttonDisabled,
           ]}
         >
@@ -94,10 +146,11 @@ export default function Index() {
 
       {/* Map */}
       <View style={{ flex: 1 }}>
-        <Map
-          onLocationChange={(loc) =>
-            setStart(`${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}`)
-          }
+        <MapWeb
+          start={startCoords || startInput}
+          end={end}
+          batteryRange={batteryRange ? Number(batteryRange) : 0}
+          onLocationChange={(loc) => setCurrentLocation(loc)}
         />
       </View>
     </View>
@@ -105,7 +158,6 @@ export default function Index() {
 }
 
 const styles = StyleSheet.create({
-  // Google-style unified toolbar
   toolbar: {
     flexDirection: "row",
     alignItems: "center",
@@ -119,12 +171,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 6,
   },
-
-  icon: {
-    marginRight: 6,
-    marginLeft: 2,
-  },
-
+  icon: { marginRight: 6, marginLeft: 2 },
   input: {
     flex: 1,
     fontSize: 16,
@@ -133,15 +180,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     color: "#111827",
   },
-
   divider: {
     width: 1,
     height: "60%",
     backgroundColor: "#e5e7eb",
     marginHorizontal: 6,
   },
-
-  // Plan button
   button: {
     flexDirection: "row",
     alignItems: "center",
@@ -149,30 +193,19 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 30,
-    backgroundColor: "#22c55e", // fallback if gradient not supported
+    backgroundColor: "#22c55e",
     shadowColor: "#22c55e",
     shadowOpacity: 0.25,
     shadowRadius: 10,
     elevation: 6,
   },
-  buttonPressed: {
-    backgroundColor: "#16a34a",
-  },
-  buttonDisabled: {
-    backgroundColor: "#a7f3d0",
-  },
+  buttonPressed: { backgroundColor: "#16a34a" },
+  buttonDisabled: { backgroundColor: "#a7f3d0" },
   buttonText: {
     color: "white",
     fontWeight: "600",
     fontSize: 15,
     fontFamily: "System",
   },
-
-  // Error
-  error: {
-    color: "red",
-    fontSize: 13,
-    marginLeft: 20,
-    marginTop: -4,
-  },
+  error: { color: "red", fontSize: 13, marginLeft: 20, marginTop: -4 },
 });

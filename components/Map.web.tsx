@@ -1,18 +1,30 @@
-import { GoogleMap, InfoWindow, Marker, useJsApiLoader } from "@react-google-maps/api";
+import {
+  DirectionsRenderer,
+  GoogleMap,
+  InfoWindow,
+  Marker,
+  useJsApiLoader,
+} from "@react-google-maps/api";
 import React, { useEffect, useState } from "react";
 
 type Props = {
   onLocationChange: (loc: { lat: number; lng: number }) => void;
+  start: string; // can be coordinates or address
+  end: string;
+  batteryRange: number;
 };
 
 const chargingIcon = "https://maps.google.com/mapfiles/ms/icons/green-dot.png";
 
-export default function MapWeb({ onLocationChange }: Props) {
-  const [currentLocation, setCurrentLocation] =
-    useState<google.maps.LatLngLiteral | null>(null);
+export default function MapWeb({ onLocationChange, start, end, batteryRange }: Props) {
+  const [currentLocation, setCurrentLocation] = useState<google.maps.LatLngLiteral | null>(null);
   const [stations, setStations] = useState<any[]>([]);
   const [loadingStations, setLoadingStations] = useState(true);
   const [selectedStation, setSelectedStation] = useState<any | null>(null);
+
+  const [directionsResponse, setDirectionsResponse] = useState<google.maps.DirectionsResult | null>(null);
+  const [distance, setDistance] = useState<string | null>(null);
+  const [duration, setDuration] = useState<string | null>(null);
 
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: process.env.EXPO_PUBLIC_MAPS_WEB_KEY!,
@@ -56,20 +68,54 @@ export default function MapWeb({ onLocationChange }: Props) {
       });
   }, []);
 
-  if (loadError)
-    return <div>Failed to load Google Maps: {String(loadError)}</div>;
+  // Calculate route whenever start/end changes
+  useEffect(() => {
+    if (!isLoaded || !start || !end) return;
+
+    const directionsService = new google.maps.DirectionsService();
+    directionsService.route(
+      {
+        origin: start,
+        destination: end,
+        travelMode: google.maps.TravelMode.DRIVING,
+      },
+      (result, status) => {
+        if (status === "OK" && result) {
+          setDirectionsResponse(result);
+          const leg = result.routes[0].legs[0];
+          setDistance(leg.distance?.text || null);
+          setDuration(leg.duration?.text || null);
+        } else {
+          console.error("Directions request failed:", status);
+        }
+      }
+    );
+  }, [isLoaded, start, end]);
+
+  // Battery range check
+  const exceedsRange =
+    distance && batteryRange
+      ? parseFloat(distance.replace(/[^\d.]/g, "")) > batteryRange
+      : false;
+
+  if (loadError) return <div>Failed to load Google Maps: {String(loadError)}</div>;
   if (!isLoaded) return <div>Loading map…</div>;
 
   return (
-    <div style={{ width: "100%", height: "100vh" }}>
+    <div style={{ width: "100%", height: "100vh", position: "relative" }}>
       {currentLocation && (
         <GoogleMap
           center={currentLocation}
           zoom={12}
           mapContainerStyle={{ width: "100%", height: "100%" }}
         >
+          {/* User marker */}
           <Marker position={currentLocation} title="You are here" />
 
+          {/* Route */}
+          {directionsResponse && <DirectionsRenderer directions={directionsResponse} />}
+
+          {/* Charging station markers */}
           {!loadingStations &&
             Array.isArray(stations) &&
             stations.map((station: any) => (
@@ -85,6 +131,7 @@ export default function MapWeb({ onLocationChange }: Props) {
               />
             ))}
 
+          {/* Info window for station */}
           {selectedStation && (
             <InfoWindow
               position={{
@@ -101,55 +148,37 @@ export default function MapWeb({ onLocationChange }: Props) {
                     {selectedStation.town}, {selectedStation.state}
                   </p>
                 )}
-                {selectedStation.postcode && <p>{selectedStation.postcode}</p>}
-
-                {selectedStation.connections &&
-                  selectedStation.connections.length > 0 && (
-                    <div>
-                      <strong>Chargers:</strong>{" "}
-                      {selectedStation.connections.length}
-                      <ul>
-                        {selectedStation.connections.map((conn: any, idx: number) => (
-                          <li key={idx}>
-                            {conn.type} - {conn.powerKW ? `${conn.powerKW} kW` : "N/A"}
-                            {conn.quantity ? ` (${conn.quantity}x)` : ""}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                {selectedStation.relatedUrl && (
-                  <p>
-                    <a
-                      href={selectedStation.relatedUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      More info
-                    </a>
-                  </p>
-                )}
+                {selectedStation.operator && <p>Operator: {selectedStation.operator}</p>}
+                {selectedStation.statusType && <p>Status: {selectedStation.statusType}</p>}
+                {selectedStation.numberOfPoints && <p>Points: {selectedStation.numberOfPoints}</p>}
               </div>
             </InfoWindow>
           )}
         </GoogleMap>
       )}
 
-      {loadingStations && (
+      {/* Route info + battery warning */}
+      {distance && duration && (
         <div
           style={{
             position: "absolute",
-            top: "50%",
+            bottom: 20,
             left: "50%",
-            transform: "translate(-50%, -50%)",
-            background: "white",
-            padding: "1em",
-            borderRadius: "8px",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+            transform: "translateX(-50%)",
+            background: "#fff",
+            padding: "10px 16px",
+            borderRadius: "12px",
+            boxShadow: "0 2px 6px rgba(0,0,0,0.2)",
           }}
         >
-          Loading charging stations…
+          <p>
+            Distance: <strong>{distance}</strong> – Duration: <strong>{duration}</strong>
+          </p>
+          {exceedsRange && (
+            <p style={{ color: "red", fontWeight: "bold" }}>
+              ⚠️ Route exceeds your battery range ({batteryRange} km)!
+            </p>
+          )}
         </div>
       )}
     </div>
