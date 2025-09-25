@@ -1,24 +1,19 @@
-import React, { useState } from "react"; // NEW STUFF START (added useState)
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native"; // added TextInput, StyleSheet, Pressable
-// NEW STUFF END
-import Map from "../components/Map"; // <- correct if components/ is at project root
+import { Ionicons } from "@expo/vector-icons"; // for search/plan icon
+import React, { useState } from "react";
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import Map from "../components/Map";
 
 export default function Index() {
-  // NEW STUFF START
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
-  const [batteryRange, setBatteryRange] = useState(""); 
-  const [rangeError, setRangeError] = useState(""); // Error state
-
-   const handleRangeChange = (text: string) => {
-    // Only allow numbers
-    if (/^\d*$/.test(text)) {
-      setBatteryRange(text);
-      setRangeError("");
-    } else {
-      setRangeError("Battery range must be a number");
-    }
-  };
+  const [batteryRange, setBatteryRange] = useState("");
+  const [rangeError, setRangeError] = useState("");
 
   const onPlan = () => {
     if (!batteryRange || isNaN(Number(batteryRange))) {
@@ -28,56 +23,54 @@ export default function Index() {
     setRangeError("");
     console.log("Start:", start, "End:", end, "Battery Range:", batteryRange);
   };
-  // NEW STUFF END
 
   return (
     <View style={{ flex: 1 }}>
-      {/* NEW STUFF START - inputs ABOVE the map */}
-      <View style={styles.form}>
-        <Text style={styles.title}>Chargify</Text>
-
-        <Text style={styles.label}>From:</Text>
+      {/* Unified Search Bar */}
+      <View style={styles.toolbar}>
+        <Ionicons name="navigate-outline" size={18} color="#9ca3af" style={styles.icon} />
         <TextInput
           style={styles.input}
-          placeholder="e.g. Stockholm"
+          placeholder="From"
+          placeholderTextColor="#9ca3af"
           value={start}
           onChangeText={setStart}
         />
-
-        <Text style={styles.label}>To(Destination):</Text>
+        <View style={styles.divider} />
         <TextInput
           style={styles.input}
-          placeholder="e.g. Gothenburg"
+          placeholder="To"
+          placeholderTextColor="#9ca3af"
           value={end}
           onChangeText={setEnd}
         />
-
-       <Text style={styles.label}>Battery range (km)</Text>
+        <View style={styles.divider} />
         <TextInput
           style={styles.input}
-          placeholder="e.g. 350"
+          placeholder="Range km"
+          placeholderTextColor="#9ca3af"
           value={batteryRange}
-          onChangeText={handleRangeChange}
           keyboardType="numeric"
+          onChangeText={setBatteryRange}
         />
-        {rangeError ? (
-          <Text style={{ color: "red", marginBottom: 4 }}>{rangeError}</Text>
-        ) : null}
 
-         <Pressable
+        <Pressable
           onPress={onPlan}
-          style={[
+          disabled={!start || !end || !batteryRange || !!rangeError}
+          style={({ pressed }) => [
             styles.button,
+            pressed && styles.buttonPressed,
             (!start || !end || !batteryRange || !!rangeError) && styles.buttonDisabled,
           ]}
-          disabled={!start || !end || !batteryRange || !!rangeError}
         >
-          <Text style={styles.buttonText}>Plan Trip</Text>
+          <Ionicons name="car-sport-outline" size={16} color="white" style={{ marginRight: 4 }} />
+          <Text style={styles.buttonText}>Plan</Text>
         </Pressable>
       </View>
-      {/* NEW STUFF END */}
 
-      {/* Map BELOW the inputs, no overlays */}
+      {rangeError ? <Text style={styles.error}>{rangeError}</Text> : null}
+
+      {/* Map */}
       <View style={{ flex: 1 }}>
         <Map />
       </View>
@@ -85,35 +78,75 @@ export default function Index() {
   );
 }
 
-// NEW STUFF START
 const styles = StyleSheet.create({
-  form: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
-    backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-    gap: 8,
-  },
-  title: { fontSize: 22, fontWeight: "800", marginBottom: 4 },
-  label: { fontSize: 14, fontWeight: "600", color: "#333" },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    padding: 10,
-    fontSize: 16,
-    backgroundColor: "#fff",
-  },
-  button: {
-    backgroundColor: "#2e7d32",
-    padding: 14,
-    borderRadius: 10,
+  // Google-style unified toolbar
+  toolbar: {
+    flexDirection: "row",
     alignItems: "center",
-    marginTop: 4,
+    backgroundColor: "#fff",
+    margin: 12,
+    borderRadius: 40,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 6,
   },
-  buttonDisabled: { opacity: 0.5 },
-  buttonText: { color: "white", fontWeight: "700", fontSize: 16 },
+
+  icon: {
+    marginRight: 6,
+    marginLeft: 2,
+  },
+
+  input: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: "System",
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    color: "#111827",
+  },
+
+  divider: {
+    width: 1,
+    height: "60%",
+    backgroundColor: "#e5e7eb",
+    marginHorizontal: 6,
+  },
+
+  // Plan button
+  button: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 30,
+    backgroundColor: "#22c55e", // fallback if gradient not supported
+    shadowColor: "#22c55e",
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  buttonPressed: {
+    backgroundColor: "#16a34a",
+  },
+  buttonDisabled: {
+    backgroundColor: "#a7f3d0",
+  },
+  buttonText: {
+    color: "white",
+    fontWeight: "600",
+    fontSize: 15,
+    fontFamily: "System",
+  },
+
+  // Error
+  error: {
+    color: "red",
+    fontSize: 13,
+    marginLeft: 20,
+    marginTop: -4,
+  },
 });
-// NEW STUFF END
