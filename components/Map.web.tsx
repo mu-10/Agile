@@ -1,9 +1,18 @@
 import React, { useEffect, useState } from "react";
 import { GoogleMap, Marker, useJsApiLoader } from "@react-google-maps/api";
-
+type Props = {
+  onLocationChange: (loc: { lat: number; lng: number }) => void;
+};
 //const center = { lat: 57.7089, lng: 11.9746 }; // Gothenburg
 
-export default function MapWeb() {
+export default function MapWeb({ onLocationChange }: Props) {
+  useEffect(() => {
+    navigator.geolocation.getCurrentPosition((pos) => {
+      const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      onLocationChange(loc); // 👈 update parent
+    });
+  }, [onLocationChange]);
+
   const [currentLocation, setCurrentLocation] =
     useState<google.maps.LatLngLiteral | null>(null);
 

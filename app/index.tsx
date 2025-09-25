@@ -1,12 +1,6 @@
 import { Ionicons } from "@expo/vector-icons"; // for search/plan icon
 import React, { useState } from "react";
-import {
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import Map from "../components/Map";
 
 export default function Index() {
@@ -15,6 +9,10 @@ export default function Index() {
   const [end, setEnd] = useState<string>("");
   const [batteryRange, setBatteryRange] = useState<string>("");
   const [rangeError, setRangeError] = useState<string>("");
+  const [location, setLocation] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
 
   // 🔹 Fix: typed parameter
   const handleRangeChange = (text: string) => {
@@ -96,7 +94,11 @@ export default function Index() {
 
       {/* Map */}
       <View style={{ flex: 1 }}>
-        <Map />
+        <Map
+          onLocationChange={(loc) =>
+            setStart(`${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}`)
+          }
+        />
       </View>
     </View>
   );
