@@ -1,18 +1,13 @@
-import { GoogleMap, Marker, useJsApiLoader } from "@react-google-maps/api";
+import { GoogleMap, InfoWindow, Marker, useJsApiLoader } from "@react-google-maps/api";
 import React, { useEffect, useState } from "react";
+
 type Props = {
   onLocationChange: (loc: { lat: number; lng: number }) => void;
 };
-//const center = { lat: 57.7089, lng: 11.9746 }; // Gothenburg
+
+const chargingIcon = "https://maps.google.com/mapfiles/ms/icons/green-dot.png";
 
 export default function MapWeb({ onLocationChange }: Props) {
-  useEffect(() => {
-    navigator.geolocation.getCurrentPosition((pos) => {
-      const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-      onLocationChange(loc); // 👈 update parent
-    });
-  }, [onLocationChange]);
-
   const [currentLocation, setCurrentLocation] =
     useState<google.maps.LatLngLiteral | null>(null);
   const [stations, setStations] = useState<any[]>([]);
@@ -23,27 +18,31 @@ export default function MapWeb({ onLocationChange }: Props) {
     googleMapsApiKey: process.env.EXPO_PUBLIC_MAPS_WEB_KEY!,
   });
 
+  // Get user location
   useEffect(() => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          setCurrentLocation({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-          });
+          const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setCurrentLocation(loc);
+          onLocationChange(loc);
         },
         (err) => {
           console.error("Error getting location:", err);
-          // fallback: Gothenburg
-          setCurrentLocation({ lat: 57.7089, lng: 11.9746 });
+          const fallback = { lat: 57.7089, lng: 11.9746 };
+          setCurrentLocation(fallback);
+          onLocationChange(fallback);
         }
       );
     } else {
       console.error("Geolocation not supported");
-      setCurrentLocation({ lat: 57.7089, lng: 11.9746 });
+      const fallback = { lat: 57.7089, lng: 11.9746 };
+      setCurrentLocation(fallback);
+      onLocationChange(fallback);
     }
-  }, []);
+  }, [onLocationChange]);
 
+  // Fetch charging stations
   useEffect(() => {
     fetch("http://localhost:3001/api/charging-stations")
       .then((res) => res.json())
@@ -51,7 +50,10 @@ export default function MapWeb({ onLocationChange }: Props) {
         setStations(data);
         setLoadingStations(false);
       })
-      .catch(() => setLoadingStations(false));
+      .catch((err) => {
+        console.error("Error fetching stations:", err);
+        setLoadingStations(false);
+      });
   }, []);
 
   if (loadError)
@@ -67,16 +69,13 @@ export default function MapWeb({ onLocationChange }: Props) {
           mapContainerStyle={{ width: "100%", height: "100%" }}
         >
           <Marker position={currentLocation} title="You are here" />
-          {/* Charging station markers */}
+
           {!loadingStations &&
             Array.isArray(stations) &&
             stations.map((station: any) => (
               <Marker
                 key={station.id}
-                position={{
-                  lat: station.latitude,
-                  lng: station.longitude,
-                }}
+                position={{ lat: station.latitude, lng: station.longitude }}
                 title={station.title}
                 icon={{
                   url: chargingIcon,
@@ -84,59 +83,59 @@ export default function MapWeb({ onLocationChange }: Props) {
                 }}
                 onClick={() => setSelectedStation(station)}
               />
-
             ))}
+
           {selectedStation && (
             <InfoWindow
               position={{
-                lat: selectedStation.AddressInfo.Latitude,
-                lng: selectedStation.AddressInfo.Longitude,
+                lat: selectedStation.latitude,
+                lng: selectedStation.longitude,
               }}
               onCloseClick={() => setSelectedStation(null)}
             >
               <div style={{ minWidth: 200 }}>
                 <h4>{selectedStation.title}</h4>
-                <p>{selectedStation.address}</p>
-                <p>
-                  {selectedStation.town}, {selectedStation.state}
-                </p>
-                <p>{selectedStation.postcode}</p>
-                <p>
-                  {selectedStation.AddressInfo.Town},{" "}
-                  {selectedStation.AddressInfo.StateOrProvince}
-                </p>
-                <p>{selectedStation.AddressInfo.Postcode}</p>
-                {/* Show connection info */}
-                {selectedStation.Connections && selectedStation.Connections.length > 0 && (
-                  <div>
-                    <strong>Chargers:</strong> {selectedStation.Connections.length}
-                    <ul>
-                      {selectedStation.Connections.map((conn: any, idx: number) => (
-                        <li key={idx}>
-                          {conn.ConnectionType?.Title} - {conn.PowerKW ? `${conn.PowerKW} kW` : "N/A"}
-                          {conn.Quantity ? ` (${conn.Quantity}x)` : ""}
-                          {conn.Price ? `, Price: ${conn.Price}` : ""}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+                {selectedStation.address && <p>{selectedStation.address}</p>}
+                {selectedStation.town && (
+                  <p>
+                    {selectedStation.town}, {selectedStation.state}
+                  </p>
                 )}
-              {selectedStation.relatedUrl && (
-                <p>
-                  <a
-                    href={selectedStation.relatedUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    More info
-                  </a>
-                </p>
-              )}
+                {selectedStation.postcode && <p>{selectedStation.postcode}</p>}
+
+                {selectedStation.connections &&
+                  selectedStation.connections.length > 0 && (
+                    <div>
+                      <strong>Chargers:</strong>{" "}
+                      {selectedStation.connections.length}
+                      <ul>
+                        {selectedStation.connections.map((conn: any, idx: number) => (
+                          <li key={idx}>
+                            {conn.type} - {conn.powerKW ? `${conn.powerKW} kW` : "N/A"}
+                            {conn.quantity ? ` (${conn.quantity}x)` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                {selectedStation.relatedUrl && (
+                  <p>
+                    <a
+                      href={selectedStation.relatedUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      More info
+                    </a>
+                  </p>
+                )}
               </div>
             </InfoWindow>
           )}
         </GoogleMap>
       )}
+
       {loadingStations && (
         <div
           style={{

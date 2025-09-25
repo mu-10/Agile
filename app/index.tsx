@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons"; // for search/plan icon
 import React, { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import Map from "../components/Map";
+import Map from "../components/Map.web";
 
 export default function Index() {
   // 🔹 Explicitly typed states
