@@ -5,7 +5,7 @@ import {
   Marker,
   useJsApiLoader,
 } from "@react-google-maps/api";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 type Props = {
   onLocationChange: (loc: { lat: number; lng: number }) => void;
@@ -22,9 +22,13 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
   const [loadingStations, setLoadingStations] = useState(true);
   const [selectedStation, setSelectedStation] = useState<any | null>(null);
 
-  const [directionsResponse, setDirectionsResponse] = useState<google.maps.DirectionsResult | null>(null);
+  const [directionsResponse, setDirectionsResponse] =
+    useState<google.maps.DirectionsResult | null>(null);
   const [distance, setDistance] = useState<string | null>(null);
   const [duration, setDuration] = useState<string | null>(null);
+
+  // store the initial map center so it doesn't keep re-centering
+  const initialCenter = useRef<google.maps.LatLngLiteral | null>(null);
 
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: process.env.EXPO_PUBLIC_MAPS_WEB_KEY!,
@@ -38,12 +42,20 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
           const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
           setCurrentLocation(loc);
           onLocationChange(loc);
+
+          if (!initialCenter.current) {
+            initialCenter.current = loc; // only set once
+          }
         },
         (err) => {
           console.error("Error getting location:", err);
           const fallback = { lat: 57.7089, lng: 11.9746 };
           setCurrentLocation(fallback);
           onLocationChange(fallback);
+
+          if (!initialCenter.current) {
+            initialCenter.current = fallback; // fallback center
+          }
         }
       );
     } else {
@@ -51,6 +63,10 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
       const fallback = { lat: 57.7089, lng: 11.9746 };
       setCurrentLocation(fallback);
       onLocationChange(fallback);
+
+      if (!initialCenter.current) {
+        initialCenter.current = fallback;
+      }
     }
   }, [onLocationChange]);
 
@@ -99,63 +115,67 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
       : false;
 
   if (loadError) return <div>Failed to load Google Maps: {String(loadError)}</div>;
-  if (!isLoaded) return <div>Loading map…</div>;
+  if (!isLoaded || !initialCenter.current) return <div>Loading map…</div>;
 
   return (
     <div style={{ width: "100%", height: "100vh", position: "relative" }}>
-      {currentLocation && (
-        <GoogleMap
-          center={currentLocation}
-          zoom={12}
-          mapContainerStyle={{ width: "100%", height: "100%" }}
-        >
-          {/* User marker */}
-          <Marker position={currentLocation} title="You are here" />
+      <GoogleMap
+        center={initialCenter.current} //  only set once
+        zoom={12}
+        mapContainerStyle={{ width: "100%", height: "100%" }}
+        options={{ streetViewControl: false, mapTypeControl: false }}
+      >
+        {/* User marker */}
+        {currentLocation && <Marker position={currentLocation} title="You are here" />}
 
-          {/* Route */}
-          {directionsResponse && <DirectionsRenderer directions={directionsResponse} />}
+        {/* Route */}
+        {directionsResponse && (
+          <DirectionsRenderer
+            directions={directionsResponse}
+            options={{ preserveViewport: true }} // prevents auto-recenter on route
+          />
+        )}
 
-          {/* Charging station markers */}
-          {!loadingStations &&
-            Array.isArray(stations) &&
-            stations.map((station: any) => (
-              <Marker
-                key={station.id}
-                position={{ lat: station.latitude, lng: station.longitude }}
-                title={station.title}
-                icon={{
-                  url: chargingIcon,
-                  scaledSize: new window.google.maps.Size(32, 32),
-                }}
-                onClick={() => setSelectedStation(station)}
-              />
-            ))}
-
-          {/* Info window for station */}
-          {selectedStation && (
-            <InfoWindow
-              position={{
-                lat: selectedStation.latitude,
-                lng: selectedStation.longitude,
+        {/* Charging station markers */}
+        {!loadingStations &&
+          Array.isArray(stations) &&
+          stations.map((station: any) => (
+            <Marker
+              key={station.id}
+              position={{ lat: station.latitude, lng: station.longitude }}
+              title={station.title}
+              icon={{
+                url: chargingIcon,
+                scaledSize: new window.google.maps.Size(32, 32),
               }}
-              onCloseClick={() => setSelectedStation(null)}
-            >
-              <div style={{ minWidth: 200 }}>
-                <h4>{selectedStation.title}</h4>
-                {selectedStation.address && <p>{selectedStation.address}</p>}
-                {selectedStation.town && (
-                  <p>
-                    {selectedStation.town}, {selectedStation.state}
-                  </p>
-                )}
-                {selectedStation.operator && <p>Operator: {selectedStation.operator}</p>}
-                {selectedStation.statusType && <p>Status: {selectedStation.statusType}</p>}
-                {selectedStation.numberOfPoints && <p>Points: {selectedStation.numberOfPoints}</p>}
-              </div>
-            </InfoWindow>
-          )}
-        </GoogleMap>
-      )}
+              onClick={() => setSelectedStation(station)}
+            />
+          ))}
+
+        {/* Info window for station */}
+        {selectedStation && (
+          <InfoWindow
+            position={{
+              lat: selectedStation.latitude,
+              lng: selectedStation.longitude,
+            }}
+            onCloseClick={() => setSelectedStation(null)}
+          >
+            <div style={{ minWidth: 200 }}>
+              <h4>{selectedStation.title}</h4>
+              {selectedStation.address && <p>{selectedStation.address}</p>}
+              {selectedStation.town && (
+                <p>
+                  {selectedStation.town}, {selectedStation.state}
+                </p>
+              )}
+              {selectedStation.operator && <p>Operator: {selectedStation.operator}</p>}
+              {selectedStation.statusType && <p>Status: {selectedStation.statusType}</p>}
+              {selectedStation.numberOfPoints && <p>Points: {selectedStation.numberOfPoints}</p>}
+            </div>
+          </InfoWindow>
+        )}
+      </GoogleMap>
 
       {/* Route info + battery warning */}
       {distance && duration && (

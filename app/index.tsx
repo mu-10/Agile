@@ -1,27 +1,32 @@
-import { Ionicons } from "@expo/vector-icons"; // for search/plan icon
+import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import MapWeb from "../components/Map.web";
 
 export default function Index() {
-  // 🔹 Input states
-  const [startInput, setStartInput] = useState<string>(""); // shown in input
-  const [startCoords, setStartCoords] = useState<string | null>(null); // lat,lng for directions
+  // Input states
+  const [startInput, setStartInput] = useState<string>("");
+  const [startCoords, setStartCoords] = useState<string | null>(null);
   const [end, setEnd] = useState<string>("");
   const [batteryRange, setBatteryRange] = useState<string>("");
   const [rangeError, setRangeError] = useState<string>("");
 
-  // 🔹 Track GPS location from MapWeb
+  // Track GPS location from MapWeb
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
 
-  // 🔹 Handle numeric input
+  // Store the route only when Plan is pressed
+  const [plannedStart, setPlannedStart] = useState<string | null>(null);
+  const [plannedEnd, setPlannedEnd] = useState<string | null>(null);
+  const [plannedRange, setPlannedRange] = useState<number>(0);
+
+  // Handle numeric input
   const handleRangeChange = (text: string) => {
-    const numericValue = text.replace(/[^0-9]/g, ""); // keep only numbers
+    const numericValue = text.replace(/[^0-9]/g, "");
     setBatteryRange(numericValue);
     setRangeError(numericValue === "" ? "Range must be a number" : "");
   };
 
-  // 🔹 Plan button
+  // Plan button
   const onPlan = () => {
     if (!batteryRange || isNaN(Number(batteryRange))) {
       setRangeError("Please enter a valid number for battery range");
@@ -29,19 +34,19 @@ export default function Index() {
     }
     setRangeError("");
 
-    console.log(
-      "Start:",
-      startInput,
-      "Coords:",
-      startCoords,
-      "End:",
+    // Lock in the planned values
+    setPlannedStart(startCoords || startInput);
+    setPlannedEnd(end);
+    setPlannedRange(Number(batteryRange));
+
+    console.log("Planned route:", {
+      start: startCoords || startInput,
       end,
-      "Battery Range:",
-      batteryRange
-    );
+      batteryRange,
+    });
   };
 
-  // 🔹 Fill input with current location on button press
+  // Fill input with current location on button press
   const useCurrentLocation = async () => {
     if (!currentLocation) return;
     const loc = currentLocation;
@@ -65,14 +70,9 @@ export default function Index() {
 
   return (
     <View style={{ flex: 1 }}>
-      {/* Unified Search Bar */}
+      {/* Toolbar */}
       <View style={styles.toolbar}>
-        <Ionicons
-          name="navigate-outline"
-          size={18}
-          color="#9ca3af"
-          style={styles.icon}
-        />
+        <Ionicons name="navigate-outline" size={18} color="#9ca3af" style={styles.icon} />
 
         {/* From input with location button */}
         <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
@@ -83,7 +83,7 @@ export default function Index() {
             value={startInput}
             onChangeText={(val) => {
               setStartInput(val);
-              setStartCoords(null); // user typed, ignore GPS coords
+              setStartCoords(null);
             }}
           />
           {currentLocation && (
@@ -103,6 +103,7 @@ export default function Index() {
 
         <View style={styles.divider} />
 
+        {/* To input */}
         <TextInput
           style={styles.input}
           placeholder="To"
@@ -113,6 +114,7 @@ export default function Index() {
 
         <View style={styles.divider} />
 
+        {/* Battery range */}
         <TextInput
           style={styles.input}
           placeholder="Range km"
@@ -122,22 +124,17 @@ export default function Index() {
           onChangeText={handleRangeChange}
         />
 
+        {/* Plan button */}
         <Pressable
           onPress={onPlan}
           disabled={!startInput || !end || !batteryRange || !!rangeError}
           style={({ pressed }) => [
             styles.button,
             pressed && styles.buttonPressed,
-            (!startInput || !end || !batteryRange || !!rangeError) &&
-              styles.buttonDisabled,
+            (!startInput || !end || !batteryRange || !!rangeError) && styles.buttonDisabled,
           ]}
         >
-          <Ionicons
-            name="car-sport-outline"
-            size={16}
-            color="white"
-            style={{ marginRight: 4 }}
-          />
+          <Ionicons name="car-sport-outline" size={16} color="white" style={{ marginRight: 4 }} />
           <Text style={styles.buttonText}>Plan</Text>
         </Pressable>
       </View>
@@ -147,9 +144,9 @@ export default function Index() {
       {/* Map */}
       <View style={{ flex: 1 }}>
         <MapWeb
-          start={startCoords || startInput}
-          end={end}
-          batteryRange={batteryRange ? Number(batteryRange) : 0}
+          start={plannedStart || ""}   // only sends planned values
+          end={plannedEnd || ""}
+          batteryRange={plannedRange}
           onLocationChange={(loc) => setCurrentLocation(loc)}
         />
       </View>
