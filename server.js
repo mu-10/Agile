@@ -9,9 +9,21 @@ app.use(cors());
 
 app.get("/api/charging-stations", async (req, res) => {
   try {
-    const response = await fetch(
-      "https://api.openchargemap.io/v3/poi/?output=json&countrycode=SE&maxresults=500",
-      {
+    // Get bounds from query parameters
+    const { north, south, east, west, maxResults = 500 } = req.query;
+    
+    let apiUrl = "https://api.openchargemap.io/v3/poi/?output=json&countrycode=SE";
+    
+    // If bounds are provided, add them to the API request
+    if (north && south && east && west) {
+      apiUrl += `&boundingbox=(${south},${west}),(${north},${east})`;
+      apiUrl += `&maxresults=${maxResults}`;
+    } else {
+      // Fallback to all of Sweden if no bounds provided
+      apiUrl += `&maxresults=${maxResults}`;
+    }
+
+    const response = await fetch(apiUrl, {
         headers: {
           "User-Agent": "Chargify/1.0 (x@email.com)",
           "X-API-Key": "3afa81c6-0da9-4e26-82eb-a9ce989a9c10",

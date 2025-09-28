@@ -5,7 +5,7 @@ import {
   Marker,
   useJsApiLoader,
 } from "@react-google-maps/api";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
 type Props = {
   onLocationChange: (loc: { lat: number; lng: number }) => void;
@@ -21,6 +21,7 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
   const [stations, setStations] = useState<any[]>([]);
   const [loadingStations, setLoadingStations] = useState(true);
   const [selectedStation, setSelectedStation] = useState<any | null>(null);
+  const [map, setMap] = useState<google.maps.Map | null>(null);
 
   const [directionsResponse, setDirectionsResponse] =
     useState<google.maps.DirectionsResult | null>(null);
@@ -33,6 +34,79 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: process.env.EXPO_PUBLIC_MAPS_WEB_KEY!,
   });
+
+  // Function to fetch stations based on map bounds
+  const fetchStationsInBounds = useCallback(async (mapInstance: google.maps.Map) => {
+    const bounds = mapInstance.getBounds();
+    if (!bounds) return;
+
+    const ne = bounds.getNorthEast();
+    const sw = bounds.getSouthWest();
+
+    const params = new URLSearchParams({
+      north: ne.lat().toString(),
+      south: sw.lat().toString(),
+      east: ne.lng().toString(),
+      west: sw.lng().toString(),
+      maxResults: '200'
+    });
+
+    try {
+      const response = await fetch(`http://localhost:3001/api/charging-stations?${params}`);
+      const newStations = await response.json();
+      
+      // Smart merge: keep existing stations that are still visible, add new ones
+      setStations(prevStations => {
+        // Create a map of new stations by ID for quick lookup
+        const newStationsMap = new Map(newStations.map((station: any) => [station.id, station]));
+        
+        // Keep existing stations that are still in the new data
+        const keptStations = prevStations.filter(station => newStationsMap.has(station.id));
+        
+        // Add new stations that weren't in the previous data
+        const keptStationIds = new Set(keptStations.map(station => station.id));
+        const addedStations = newStations.filter((station: any) => !keptStationIds.has(station.id));
+        
+        // Also remove stations that are now outside the visible bounds
+        const currentBounds = bounds;
+        const visibleStations = keptStations.filter(station => {
+          const stationLat = station.latitude;
+          const stationLng = station.longitude;
+          return stationLat >= sw.lat() && stationLat <= ne.lat() && 
+                 stationLng >= sw.lng() && stationLng <= ne.lng();
+        });
+        
+        return [...visibleStations, ...addedStations];
+      });
+    } catch (error) {
+      console.error("Error fetching stations:", error);
+    } finally {
+      setLoadingStations(false);
+    }
+  }, []);
+
+  // Debounced bounds change handler
+  const debouncedFetchStations = useRef<number | null>(null);
+  const onBoundsChanged = useCallback(() => {
+    if (map) {
+      // Clear previous timeout
+      if (debouncedFetchStations.current) {
+        clearTimeout(debouncedFetchStations.current);
+      }
+      
+      // Set new timeout
+      debouncedFetchStations.current = setTimeout(() => {
+        fetchStationsInBounds(map);
+      }, 500) as unknown as number; // Wait 500ms after user stops zooming/panning
+    }
+  }, [map, fetchStationsInBounds]);
+
+  // Handle map load
+  const onLoad = useCallback((mapInstance: google.maps.Map) => {
+    setMap(mapInstance);
+    // Initial fetch when map loads
+    fetchStationsInBounds(mapInstance);
+  }, [fetchStationsInBounds]);
 
   // Get user location
   useEffect(() => {
@@ -69,20 +143,6 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
       }
     }
   }, [onLocationChange]);
-
-  // Fetch charging stations
-  useEffect(() => {
-    fetch("http://localhost:3001/api/charging-stations")
-      .then((res) => res.json())
-      .then((data) => {
-        setStations(data);
-        setLoadingStations(false);
-      })
-      .catch((err) => {
-        console.error("Error fetching stations:", err);
-        setLoadingStations(false);
-      });
-  }, []);
 
   // Calculate route whenever start/end changes
   useEffect(() => {
@@ -124,6 +184,8 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
         zoom={12}
         mapContainerStyle={{ width: "100%", height: "100%" }}
         options={{ streetViewControl: false, mapTypeControl: false }}
+        onLoad={onLoad}
+        onBoundsChanged={onBoundsChanged}
       >
         {/* User marker */}
         {currentLocation && <Marker position={currentLocation} title="You are here" />}
