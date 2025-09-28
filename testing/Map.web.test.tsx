@@ -1,5 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import MapWeb from "./Map";
+import MapWeb from "../components/Map.web";
 
 jest.mock("@react-google-maps/api", () => ({
   GoogleMap: ({ children }: any) => <div data-testid="google-map">{children}</div>,
