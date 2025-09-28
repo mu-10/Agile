@@ -1,4 +1,4 @@
-//Get all charging stations in Sweden using openchargemap API and send them to the front-end
+// Get all charging stations in Sweden using openchargemap API and send them to the front-end
 
 const express = require("express");
 const cors = require("cors");
@@ -37,7 +37,6 @@ app.get("/api/charging-stations", async (req, res) => {
     }
     const data = await response.json();
 
-    // Optionally, you can map and format all available info for each station
     const formatted = data.map((station) => ({
       id: station.ID,
       title: station.AddressInfo?.Title,

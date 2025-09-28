@@ -22,6 +22,7 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
   const [loadingStations, setLoadingStations] = useState(true);
   const [selectedStation, setSelectedStation] = useState<any | null>(null);
   const [map, setMap] = useState<google.maps.Map | null>(null);
+  const [backendError, setBackendError] = useState<boolean>(false);
 
   const [directionsResponse, setDirectionsResponse] =
     useState<google.maps.DirectionsResult | null>(null);
@@ -53,7 +54,16 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
 
     try {
       const response = await fetch(`http://localhost:3001/api/charging-stations?${params}`);
+      
+      // Check if the request was successful
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const newStations = await response.json();
+      
+      // Clear any previous backend error
+      setBackendError(false);
       
       // Smart merge: keep existing stations that are still visible, add new ones
       setStations(prevStations => {
@@ -80,6 +90,13 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
       });
     } catch (error) {
       console.error("Error fetching stations:", error);
+      
+      // Check if it's a network error (backend not running)
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        setBackendError(true);
+      } else if (error instanceof Error && error.message.includes('HTTP error')) {
+        setBackendError(true);
+      }
     } finally {
       setLoadingStations(false);
     }
@@ -261,6 +278,57 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
               ⚠️ Route exceeds your battery range ({batteryRange} km)!
             </p>
           )}
+        </div>
+      )}
+
+      {/* Backend Error Popup */}
+      {backendError && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100%",
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            zIndex: 9999,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "#fff",
+              padding: "24px",
+              borderRadius: "12px",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+              maxWidth: "400px",
+              margin: "20px",
+              textAlign: "center",
+            }}
+          >
+            <h3 style={{ color: "#d32f2f", marginBottom: "16px" }}>
+              ⚠️ Backend Not Running
+            </h3>
+            <p style={{ marginBottom: "20px", color: "#666" }}>
+              Backend is not running, no charging locations will be fetched.
+            </p>
+            <button
+              onClick={() => setBackendError(false)}
+              style={{
+                backgroundColor: "#1976d2",
+                color: "#fff",
+                border: "none",
+                padding: "8px 16px",
+                borderRadius: "6px",
+                cursor: "pointer",
+                fontSize: "14px",
+              }}
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
     </div>
