@@ -11,7 +11,7 @@
    ```
 
 2. Start the backend
-  ```bash
+   ```bash
    node server.js
    ```
 
