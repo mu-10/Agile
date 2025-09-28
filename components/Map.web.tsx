@@ -251,6 +251,22 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
               {selectedStation.operator && <p>Operator: {selectedStation.operator}</p>}
               {selectedStation.statusType && <p>Status: {selectedStation.statusType}</p>}
               {selectedStation.numberOfPoints && <p>Points: {selectedStation.numberOfPoints}</p>}
+              
+              {selectedStation.connections && selectedStation.connections.length > 0 && (
+                <div>
+                  <strong>Connection Types:</strong>
+                  <ul style={{ margin: "8px 0", paddingLeft: "20px" }}>
+                    {selectedStation.connections.map((conn: any, idx: number) => (
+                      <li key={idx} style={{ marginBottom: "4px" }}>
+                        <strong>{conn.type}</strong>
+                        {conn.powerKW && <span> - {conn.powerKW} kW</span>}
+                        {conn.level && <span> ({conn.level})</span>}
+                        {conn.quantity && conn.quantity > 1 && <span> (x{conn.quantity})</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           </InfoWindow>
         )}
@@ -275,7 +291,7 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
           </p>
           {exceedsRange && (
             <p style={{ color: "red", fontWeight: "bold" }}>
-              ⚠️ Route exceeds your battery range ({batteryRange} km)!
+              Route exceeds your battery range ({batteryRange} km)!
             </p>
           )}
         </div>
@@ -308,8 +324,8 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
               textAlign: "center",
             }}
           >
-            <h3 style={{ color: "#d32f2f", marginBottom: "16px" }}>
-              ⚠️ Backend Not Running
+            <h3 style={{ color: "#d32f2f", marginBottom: "16px", fontWeight: "bold" }}>
+              Backend Not Running
             </h3>
             <p style={{ marginBottom: "20px", color: "#666" }}>
               Backend is not running, no charging locations will be fetched.
