@@ -34,8 +34,50 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
 
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: process.env.EXPO_PUBLIC_MAPS_WEB_KEY!,
-    libraries: ['places'], // Only load needed libraries
+    libraries: ['places', 'geometry'], // Add geometry library for distance calculations
   });
+
+  // Helper function to calculate distance from a point to the route path
+  const getDistanceToRoute = useCallback((
+    stationLat: number, 
+    stationLng: number, 
+    route: google.maps.DirectionsResult
+  ): number => {
+    if (!route || !route.routes[0]) return Infinity;
+
+    const path = route.routes[0].overview_path;
+    let minDistance = Infinity;
+
+    // Check distance to each point along the route
+    for (let i = 0; i < path.length; i++) {
+      const routePoint = path[i];
+      const distance = google.maps.geometry.spherical.computeDistanceBetween(
+        new google.maps.LatLng(stationLat, stationLng),
+        new google.maps.LatLng(routePoint.lat(), routePoint.lng())
+      );
+      
+      if (distance < minDistance) {
+        minDistance = distance;
+      }
+    }
+
+    return minDistance;
+  }, []);
+
+  // Filter stations based on route proximity (only when route exists)
+  const filteredStations = useCallback(() => {
+    if (!directionsResponse || !start || !end) {
+      // No route planned - show all stations
+      return stations;
+    }
+
+    // Route exists - filter stations within 2km of route
+    const MAX_DISTANCE_METERS = 2000; // 2km
+    return stations.filter(station => {
+      const distance = getDistanceToRoute(station.latitude, station.longitude, directionsResponse);
+      return distance <= MAX_DISTANCE_METERS;
+    });
+  }, [stations, directionsResponse, start, end, getDistanceToRoute]);
 
   // Function to fetch stations based on map bounds
   const fetchStationsInBounds = useCallback(async (mapInstance: google.maps.Map) => {
@@ -227,10 +269,10 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
           />
         )}
 
-        {/* Charging station markers */}
+        {/* Charging station markers - filtered by route proximity */}
         {!loadingStations &&
-          Array.isArray(stations) &&
-          stations.map((station: any) => (
+          Array.isArray(filteredStations()) &&
+          filteredStations().map((station: any) => (
             <Marker
               key={station.id}
               position={{ lat: station.latitude, lng: station.longitude }}
