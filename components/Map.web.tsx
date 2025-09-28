@@ -34,6 +34,7 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
 
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: process.env.EXPO_PUBLIC_MAPS_WEB_KEY!,
+    libraries: ['places'], // Only load needed libraries
   });
 
   // Function to fetch stations based on map bounds
@@ -192,7 +193,18 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
       : false;
 
   if (loadError) return <div>Failed to load Google Maps: {String(loadError)}</div>;
-  if (!isLoaded || !initialCenter.current) return <div>Loading map…</div>;
+  if (!isLoaded || !initialCenter.current) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh' 
+      }}>
+        <div>Loading map...</div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ width: "100%", height: "100vh", position: "relative" }}>
