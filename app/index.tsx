@@ -10,6 +10,8 @@ export default function Index() {
   const [end, setEnd] = useState<string>("");
   const [batteryRange, setBatteryRange] = useState<string>("");
   const [rangeError, setRangeError] = useState<string>("");
+  const [batteryCapacity, setBatteryCapacity] = useState<string>("");
+  const [capacityError, setCapacityError] = useState<string>("");
 
   // Track GPS location from MapWeb
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -19,20 +21,42 @@ export default function Index() {
   const [plannedEnd, setPlannedEnd] = useState<string | null>(null);
   const [plannedRange, setPlannedRange] = useState<number>(0);
 
-  // Handle numeric input
+  // Handle numeric input for range
   const handleRangeChange = (text: string) => {
     const numericValue = text.replace(/[^0-9]/g, "");
     setBatteryRange(numericValue);
     setRangeError(numericValue === "" ? "Range must be a number" : "");
   };
 
+  // Handle numeric input for capacity
+  const handleCapacityChange = (text: string) => {
+    const numericValue = text.replace(/[^0-9]/g, "");
+    setBatteryCapacity(numericValue);
+    if (numericValue === "") {
+      setCapacityError("Capacity must be a number");
+    } else if (Number(numericValue) > 1000) {
+      setCapacityError("Please enter a valid capacity.");
+    } else {
+      setCapacityError("");
+    }
+  };
+
   // Plan button
   const onPlan = () => {
+    let valid = true;
     if (!batteryRange || isNaN(Number(batteryRange))) {
       setRangeError("Please enter a valid number for battery range");
-      return;
+      valid = false;
+    } else {
+      setRangeError("");
     }
-    setRangeError("");
+    if (!batteryCapacity || isNaN(Number(batteryCapacity)) || Number(batteryCapacity) > 1000) {
+      setCapacityError(!batteryCapacity || isNaN(Number(batteryCapacity)) ? "Please enter a valid number for capacity" : "Please enter a valid capacity.");
+      valid = false;
+    } else {
+      setCapacityError("");
+    }
+    if (!valid) return;
 
     // Lock in the planned values
     setPlannedStart(startCoords || startInput);
@@ -43,6 +67,7 @@ export default function Index() {
       start: startCoords || startInput,
       end,
       batteryRange,
+      batteryCapacity,
     });
   };
 
@@ -124,6 +149,18 @@ export default function Index() {
           onChangeText={handleRangeChange}
         />
 
+        <View style={styles.divider} />
+
+        {/* Battery capacity */}
+        <TextInput
+          style={styles.input}
+          placeholder="Capacity km"
+          placeholderTextColor="#9ca3af"
+          value={batteryCapacity}
+          keyboardType="numeric"
+          onChangeText={handleCapacityChange}
+        />
+
         {/* Plan button */}
         <Pressable
           onPress={onPlan}
@@ -139,7 +176,8 @@ export default function Index() {
         </Pressable>
       </View>
 
-      {rangeError ? <Text style={styles.error}>{rangeError}</Text> : null}
+  {rangeError ? <Text style={styles.error}>{rangeError}</Text> : null}
+  {capacityError ? <Text style={styles.error}>{capacityError}</Text> : null}
 
       {/* Map */}
       <View style={{ flex: 1 }}>
@@ -147,6 +185,7 @@ export default function Index() {
           start={plannedStart || ""}   // only sends planned values
           end={plannedEnd || ""}
           batteryRange={plannedRange}
+          batteryCapacity={Number(batteryCapacity) || 0}
           onLocationChange={(loc) => setCurrentLocation(loc)}
         />
       </View>

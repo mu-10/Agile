@@ -12,6 +12,7 @@ type Props = {
   start: string; // can be coordinates or address
   end: string;
   batteryRange: number;
+  batteryCapacity: number;
 };
 
 const chargingIcon = "https://maps.google.com/mapfiles/ms/icons/green-dot.png";
@@ -20,19 +21,19 @@ const chargingIcon = "https://maps.google.com/mapfiles/ms/icons/green-dot.png";
 function estimateChargingTime(
   currentBattery: number,
   station: any,
-  batteryCapacity: number
+  batteryCapacity: number,
+  extraRangeNeeded: number
 ) {
-  // Assume charging from currentBattery to full
-  // chargingSpeed in kW, batteryCapacity in kWh
   const chargingSpeed = Math.max(
     ...station.connections.map((c: any) => c.powerKW || 0)
   );
   if (!chargingSpeed) return null;
-  const energyNeeded = batteryCapacity - currentBattery; // kWh
+  // Only charge up to the max capacity
+  const energyNeeded = Math.min(extraRangeNeeded, batteryCapacity - currentBattery); // km
   return Math.ceil((energyNeeded / chargingSpeed) * 60); // minutes
 }
 
-export default function MapWeb({ onLocationChange, start, end, batteryRange }: Props) {
+export default function MapWeb({ onLocationChange, start, end, batteryRange, batteryCapacity }: Props) {
   const [currentLocation, setCurrentLocation] = useState<google.maps.LatLngLiteral | null>(null);
   const [stations, setStations] = useState<any[]>([]);
   const [loadingStations, setLoadingStations] = useState(true);
@@ -71,29 +72,26 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
         new google.maps.LatLng(stationLat, stationLng),
         new google.maps.LatLng(routePoint.lat(), routePoint.lng())
       );
-      
       if (distance < minDistance) {
         minDistance = distance;
       }
     }
-
     return minDistance;
   }, []);
 
   // Filter stations based on route proximity (only when route exists)
-  const filteredStations = useCallback(() => {
+  function filteredStations() {
     if (!directionsResponse || !start || !end) {
       // No route planned - show all stations
       return stations;
     }
-
     // Route exists - filter stations within 2km of route
     const MAX_DISTANCE_METERS = 2000; // 2km
     return stations.filter(station => {
-      const distance = getDistanceToRoute(station.latitude, station.longitude, directionsResponse);
+      const distance = getDistanceToRoute(station.latitude, station.longitude, directionsResponse!);
       return distance <= MAX_DISTANCE_METERS;
     });
-  }, [stations, directionsResponse, start, end, getDistanceToRoute]);
+  }
 
   // Function to fetch stations based on map bounds
   const fetchStationsInBounds = useCallback(async (mapInstance: google.maps.Map) => {
@@ -225,10 +223,19 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
     if (!isLoaded || !start || !end) return;
 
     const directionsService = new google.maps.DirectionsService();
+    // If charging is needed and a best station is found, add it as a waypoint
+    let waypoints = [];
+    if (exceedsRange && bestChargingStation) {
+      waypoints.push({
+        location: { lat: bestChargingStation.latitude, lng: bestChargingStation.longitude },
+        stopover: true,
+      });
+    }
     directionsService.route(
       {
         origin: start,
         destination: end,
+        waypoints,
         travelMode: google.maps.TravelMode.DRIVING,
       },
       (result, status) => {
@@ -445,7 +452,8 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
               {estimateChargingTime(
                 batteryRange, // assume battery is nearly empty
                 bestChargingStation,
-                75 // replace with your vehicle's battery capacity in kWh
+                batteryCapacity,
+                extraRangeNeeded
               ) || "N/A"} min
             </strong>
           </p>
