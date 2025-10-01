@@ -11,13 +11,26 @@ type Props = {
   onLocationChange: (loc: { lat: number; lng: number }) => void;
   start: string; // can be coordinates or address
   end: string;
+  // Optional: if caller has selected exact Google place predictions
+  originPlaceId?: string;
+  destinationPlaceId?: string;
   batteryRange: number;
+  onMapsReady?: () => void; // notify parent when Maps JS is ready (web)
 };
 
 const chargingIcon = "https://maps.google.com/mapfiles/ms/icons/green-dot.png";
 
-export default function MapWeb({ onLocationChange, start, end, batteryRange }: Props) {
-  const [currentLocation, setCurrentLocation] = useState<google.maps.LatLngLiteral | null>(null);
+export default function MapWeb({
+  onLocationChange,
+  start,
+  end,
+  originPlaceId,
+  destinationPlaceId,
+  batteryRange,
+  onMapsReady,
+}: Props) {
+  const [currentLocation, setCurrentLocation] =
+    useState<google.maps.LatLngLiteral | null>(null);
   const [stations, setStations] = useState<any[]>([]);
   const [loadingStations, setLoadingStations] = useState(true);
   const [selectedStation, setSelectedStation] = useState<any | null>(null);
@@ -34,35 +47,43 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
 
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: process.env.EXPO_PUBLIC_MAPS_WEB_KEY!,
-    libraries: ['places', 'geometry'], // Add geometry library for distance calculations
+    libraries: ["places", "geometry"], // Add geometry library for distance calculations
   });
 
+  // Reuse a single DirectionsService instance
+  const directionsServiceRef = useRef<google.maps.DirectionsService | null>(
+    null
+  );
+
   // Helper function to calculate distance from a point to the route path
-  const getDistanceToRoute = useCallback((
-    stationLat: number, 
-    stationLng: number, 
-    route: google.maps.DirectionsResult
-  ): number => {
-    if (!route || !route.routes[0]) return Infinity;
+  const getDistanceToRoute = useCallback(
+    (
+      stationLat: number,
+      stationLng: number,
+      route: google.maps.DirectionsResult
+    ): number => {
+      if (!route || !route.routes[0]) return Infinity;
 
-    const path = route.routes[0].overview_path;
-    let minDistance = Infinity;
+      const path = route.routes[0].overview_path;
+      let minDistance = Infinity;
 
-    // Check distance to each point along the route
-    for (let i = 0; i < path.length; i++) {
-      const routePoint = path[i];
-      const distance = google.maps.geometry.spherical.computeDistanceBetween(
-        new google.maps.LatLng(stationLat, stationLng),
-        new google.maps.LatLng(routePoint.lat(), routePoint.lng())
-      );
-      
-      if (distance < minDistance) {
-        minDistance = distance;
+      // Check distance to each point along the route
+      for (let i = 0; i < path.length; i++) {
+        const routePoint = path[i];
+        const distance = google.maps.geometry.spherical.computeDistanceBetween(
+          new google.maps.LatLng(stationLat, stationLng),
+          new google.maps.LatLng(routePoint.lat(), routePoint.lng())
+        );
+
+        if (distance < minDistance) {
+          minDistance = distance;
+        }
       }
-    }
 
-    return minDistance;
-  }, []);
+      return minDistance;
+    },
+    []
+  );
 
   // Filter stations based on route proximity (only when route exists)
   const filteredStations = useCallback(() => {
@@ -73,77 +94,101 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
 
     // Route exists - filter stations within 2km of route
     const MAX_DISTANCE_METERS = 2000; // 2km
-    return stations.filter(station => {
-      const distance = getDistanceToRoute(station.latitude, station.longitude, directionsResponse);
+    return stations.filter((station) => {
+      const distance = getDistanceToRoute(
+        station.latitude,
+        station.longitude,
+        directionsResponse
+      );
       return distance <= MAX_DISTANCE_METERS;
     });
   }, [stations, directionsResponse, start, end, getDistanceToRoute]);
 
   // Function to fetch stations based on map bounds
-  const fetchStationsInBounds = useCallback(async (mapInstance: google.maps.Map) => {
-    const bounds = mapInstance.getBounds();
-    if (!bounds) return;
+  const fetchStationsInBounds = useCallback(
+    async (mapInstance: google.maps.Map) => {
+      const bounds = mapInstance.getBounds();
+      if (!bounds) return;
 
-    const ne = bounds.getNorthEast();
-    const sw = bounds.getSouthWest();
+      const ne = bounds.getNorthEast();
+      const sw = bounds.getSouthWest();
 
-    const params = new URLSearchParams({
-      north: ne.lat().toString(),
-      south: sw.lat().toString(),
-      east: ne.lng().toString(),
-      west: sw.lng().toString(),
-      maxResults: '200'
-    });
-
-    try {
-      const response = await fetch(`http://localhost:3001/api/charging-stations?${params}`);
-      
-      // Check if the request was successful
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const newStations = await response.json();
-      
-      // Clear any previous backend error
-      setBackendError(false);
-      
-      // Smart merge: keep existing stations that are still visible, add new ones
-      setStations(prevStations => {
-        // Create a map of new stations by ID for quick lookup
-        const newStationsMap = new Map(newStations.map((station: any) => [station.id, station]));
-        
-        // Keep existing stations that are still in the new data
-        const keptStations = prevStations.filter(station => newStationsMap.has(station.id));
-        
-        // Add new stations that weren't in the previous data
-        const keptStationIds = new Set(keptStations.map(station => station.id));
-        const addedStations = newStations.filter((station: any) => !keptStationIds.has(station.id));
-        
-        // Also remove stations that are now outside the visible bounds
-        const currentBounds = bounds;
-        const visibleStations = keptStations.filter(station => {
-          const stationLat = station.latitude;
-          const stationLng = station.longitude;
-          return stationLat >= sw.lat() && stationLat <= ne.lat() && 
-                 stationLng >= sw.lng() && stationLng <= ne.lng();
-        });
-        
-        return [...visibleStations, ...addedStations];
+      const params = new URLSearchParams({
+        north: ne.lat().toString(),
+        south: sw.lat().toString(),
+        east: ne.lng().toString(),
+        west: sw.lng().toString(),
+        maxResults: "200",
       });
-    } catch (error) {
-      console.error("Error fetching stations:", error);
-      
-      // Check if it's a network error (backend not running)
-      if (error instanceof TypeError && error.message.includes('fetch')) {
-        setBackendError(true);
-      } else if (error instanceof Error && error.message.includes('HTTP error')) {
-        setBackendError(true);
+
+      try {
+        const response = await fetch(
+          `http://localhost:3001/api/charging-stations?${params}`
+        );
+
+        // Check if the request was successful
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const newStations = await response.json();
+
+        // Clear any previous backend error
+        setBackendError(false);
+
+        // Smart merge: keep existing stations that are still visible, add new ones
+        setStations((prevStations) => {
+          // Create a map of new stations by ID for quick lookup
+          const newStationsMap = new Map(
+            newStations.map((station: any) => [station.id, station])
+          );
+
+          // Keep existing stations that are still in the new data
+          const keptStations = prevStations.filter((station) =>
+            newStationsMap.has(station.id)
+          );
+
+          // Add new stations that weren't in the previous data
+          const keptStationIds = new Set(
+            keptStations.map((station) => station.id)
+          );
+          const addedStations = newStations.filter(
+            (station: any) => !keptStationIds.has(station.id)
+          );
+
+          // Also remove stations that are now outside the visible bounds
+          const currentBounds = bounds;
+          const visibleStations = keptStations.filter((station) => {
+            const stationLat = station.latitude;
+            const stationLng = station.longitude;
+            return (
+              stationLat >= sw.lat() &&
+              stationLat <= ne.lat() &&
+              stationLng >= sw.lng() &&
+              stationLng <= ne.lng()
+            );
+          });
+
+          return [...visibleStations, ...addedStations];
+        });
+      } catch (error) {
+        console.error("Error fetching stations:", error);
+
+        // Check if it's a network error (backend not running)
+        if (error instanceof TypeError && error.message.includes("fetch")) {
+          setBackendError(true);
+        } else if (
+          error instanceof Error &&
+          error.message.includes("HTTP error")
+        ) {
+          setBackendError(true);
+        }
+      } finally {
+        setLoadingStations(false);
       }
-    } finally {
-      setLoadingStations(false);
-    }
-  }, []);
+    },
+    []
+  );
 
   // Debounced bounds change handler
   const debouncedFetchStations = useRef<number | null>(null);
@@ -153,7 +198,7 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
       if (debouncedFetchStations.current) {
         clearTimeout(debouncedFetchStations.current);
       }
-      
+
       // Set new timeout
       debouncedFetchStations.current = setTimeout(() => {
         fetchStationsInBounds(map);
@@ -162,11 +207,14 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
   }, [map, fetchStationsInBounds]);
 
   // Handle map load
-  const onLoad = useCallback((mapInstance: google.maps.Map) => {
-    setMap(mapInstance);
-    // Initial fetch when map loads
-    fetchStationsInBounds(mapInstance);
-  }, [fetchStationsInBounds]);
+  const onLoad = useCallback(
+    (mapInstance: google.maps.Map) => {
+      setMap(mapInstance);
+      // Initial fetch when map loads
+      fetchStationsInBounds(mapInstance);
+    },
+    [fetchStationsInBounds]
+  );
 
   // Get user location
   useEffect(() => {
@@ -204,16 +252,70 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
     }
   }, [onLocationChange]);
 
-  // Calculate route whenever start/end changes
+  // Initialize directions service once when Maps is loaded
   useEffect(() => {
-    if (!isLoaded || !start || !end) return;
+    if (!isLoaded) return;
+    if (!directionsServiceRef.current) {
+      directionsServiceRef.current = new google.maps.DirectionsService();
+    }
+    // Notify parent once maps are ready
+    onMapsReady && onMapsReady();
+  }, [isLoaded]);
 
-    const directionsService = new google.maps.DirectionsService();
-    directionsService.route(
+  // Helper to parse "lat,lng" strings
+  const parseLatLng = useCallback(
+    (val: string): google.maps.LatLngLiteral | null => {
+      const parts = val.split(",");
+      if (parts.length !== 2) return null;
+      const lat = parseFloat(parts[0]);
+      const lng = parseFloat(parts[1]);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+      return null;
+    },
+    []
+  );
+
+  // Calculate route whenever inputs change
+  useEffect(() => {
+    if (!isLoaded) return;
+    if (!directionsServiceRef.current) return;
+    if (!start && !originPlaceId) return; // need at least one origin signal
+    if (!end && !destinationPlaceId) return; // need at least one destination signal
+
+    // Build origin param
+    let origin:
+      | string
+      | google.maps.LatLngLiteral
+      | { placeId: string }
+      | null = null;
+    if (originPlaceId) {
+      origin = { placeId: originPlaceId };
+    } else if (start) {
+      const parsed = parseLatLng(start);
+      origin = parsed ? parsed : start; // either LatLng or free text
+    }
+
+    // Build destination param
+    let destination:
+      | string
+      | google.maps.LatLngLiteral
+      | { placeId: string }
+      | null = null;
+    if (destinationPlaceId) {
+      destination = { placeId: destinationPlaceId };
+    } else if (end) {
+      const parsed = parseLatLng(end);
+      destination = parsed ? parsed : end;
+    }
+
+    if (!origin || !destination) return;
+
+    directionsServiceRef.current.route(
       {
-        origin: start,
-        destination: end,
+        origin,
+        destination,
         travelMode: google.maps.TravelMode.DRIVING,
+        provideRouteAlternatives: false,
       },
       (result, status) => {
         if (status === "OK" && result) {
@@ -223,10 +325,13 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
           setDuration(leg.duration?.text || null);
         } else {
           console.error("Directions request failed:", status);
+          setDirectionsResponse(null);
+          setDistance(null);
+          setDuration(null);
         }
       }
     );
-  }, [isLoaded, start, end]);
+  }, [isLoaded, start, end, originPlaceId, destinationPlaceId, parseLatLng]);
 
   // Battery range check
   const exceedsRange =
@@ -234,15 +339,18 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
       ? parseFloat(distance.replace(/[^\d.]/g, "")) > batteryRange
       : false;
 
-  if (loadError) return <div>Failed to load Google Maps: {String(loadError)}</div>;
+  if (loadError)
+    return <div>Failed to load Google Maps: {String(loadError)}</div>;
   if (!isLoaded || !initialCenter.current) {
     return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh' 
-      }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+        }}
+      >
         <div>Loading map...</div>
       </div>
     );
@@ -259,7 +367,9 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
         onBoundsChanged={onBoundsChanged}
       >
         {/* User marker */}
-        {currentLocation && <Marker position={currentLocation} title="You are here" />}
+        {currentLocation && (
+          <Marker position={currentLocation} title="You are here" />
+        )}
 
         {/* Route */}
         {directionsResponse && (
@@ -302,25 +412,36 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
                   {selectedStation.town}, {selectedStation.state}
                 </p>
               )}
-              {selectedStation.operator && <p>Operator: {selectedStation.operator}</p>}
-              {selectedStation.statusType && <p>Status: {selectedStation.statusType}</p>}
-              {selectedStation.numberOfPoints && <p>Points: {selectedStation.numberOfPoints}</p>}
-              
-              {selectedStation.connections && selectedStation.connections.length > 0 && (
-                <div>
-                  <strong>Connection Types:</strong>
-                  <ul style={{ margin: "8px 0", paddingLeft: "20px" }}>
-                    {selectedStation.connections.map((conn: any, idx: number) => (
-                      <li key={idx} style={{ marginBottom: "4px" }}>
-                        <strong>{conn.type}</strong>
-                        {conn.powerKW && <span> - {conn.powerKW} kW</span>}
-                        {conn.level && <span> ({conn.level})</span>}
-                        {conn.quantity && conn.quantity > 1 && <span> (x{conn.quantity})</span>}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+              {selectedStation.operator && (
+                <p>Operator: {selectedStation.operator}</p>
               )}
+              {selectedStation.statusType && (
+                <p>Status: {selectedStation.statusType}</p>
+              )}
+              {selectedStation.numberOfPoints && (
+                <p>Points: {selectedStation.numberOfPoints}</p>
+              )}
+
+              {selectedStation.connections &&
+                selectedStation.connections.length > 0 && (
+                  <div>
+                    <strong>Connection Types:</strong>
+                    <ul style={{ margin: "8px 0", paddingLeft: "20px" }}>
+                      {selectedStation.connections.map(
+                        (conn: any, idx: number) => (
+                          <li key={idx} style={{ marginBottom: "4px" }}>
+                            <strong>{conn.type}</strong>
+                            {conn.powerKW && <span> - {conn.powerKW} kW</span>}
+                            {conn.level && <span> ({conn.level})</span>}
+                            {conn.quantity && conn.quantity > 1 && (
+                              <span> (x{conn.quantity})</span>
+                            )}
+                          </li>
+                        )
+                      )}
+                    </ul>
+                  </div>
+                )}
             </div>
           </InfoWindow>
         )}
@@ -341,7 +462,8 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
           }}
         >
           <p>
-            Distance: <strong>{distance}</strong> – Duration: <strong>{duration}</strong>
+            Distance: <strong>{distance}</strong> – Duration:{" "}
+            <strong>{duration}</strong>
           </p>
           {exceedsRange && (
             <p style={{ color: "red", fontWeight: "bold" }}>
@@ -378,7 +500,13 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
               textAlign: "center",
             }}
           >
-            <h3 style={{ color: "#d32f2f", marginBottom: "16px", fontWeight: "bold" }}>
+            <h3
+              style={{
+                color: "#d32f2f",
+                marginBottom: "16px",
+                fontWeight: "bold",
+              }}
+            >
               Backend Not Running
             </h3>
             <p style={{ marginBottom: "20px", color: "#666" }}>
