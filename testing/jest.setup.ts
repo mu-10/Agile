@@ -1,6 +1,6 @@
 // Jest setup
 import "@testing-library/jest-dom";
-import "../../__mocks__/google-maps";
+import "../__mocks__/google-maps";
 
 beforeAll(() => {
   (global.navigator as any).geolocation = {
