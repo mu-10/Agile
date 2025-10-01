@@ -16,6 +16,22 @@ type Props = {
 
 const chargingIcon = "https://maps.google.com/mapfiles/ms/icons/green-dot.png";
 
+// Helper to estimate charging time (in minutes)
+function estimateChargingTime(
+  currentBattery: number,
+  station: any,
+  batteryCapacity: number
+) {
+  // Assume charging from currentBattery to full
+  // chargingSpeed in kW, batteryCapacity in kWh
+  const chargingSpeed = Math.max(
+    ...station.connections.map((c: any) => c.powerKW || 0)
+  );
+  if (!chargingSpeed) return null;
+  const energyNeeded = batteryCapacity - currentBattery; // kWh
+  return Math.ceil((energyNeeded / chargingSpeed) * 60); // minutes
+}
+
 export default function MapWeb({ onLocationChange, start, end, batteryRange }: Props) {
   const [currentLocation, setCurrentLocation] = useState<google.maps.LatLngLiteral | null>(null);
   const [stations, setStations] = useState<any[]>([]);
@@ -234,6 +250,45 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
       ? parseFloat(distance.replace(/[^\d.]/g, "")) > batteryRange
       : false;
 
+  // Find best charging station within battery range
+  const bestChargingStation = React.useMemo(() => {
+    if (!directionsResponse || !exceedsRange || !stations.length) return null;
+    // Get route points within battery range
+    const routePoints = directionsResponse.routes[0].overview_path;
+    let traveled = 0;
+    let lastPoint = routePoints[0];
+    let reachableStations: any[] = [];
+    for (let i = 1; i < routePoints.length; i++) {
+      const segment = google.maps.geometry.spherical.computeDistanceBetween(
+        lastPoint,
+        routePoints[i]
+      ) / 1000; // km
+      traveled += segment;
+      lastPoint = routePoints[i];
+      if (traveled > batteryRange) break;
+      // Find stations near this point (within 2km)
+      stations.forEach(station => {
+        const dist = google.maps.geometry.spherical.computeDistanceBetween(
+          new google.maps.LatLng(station.latitude, station.longitude),
+          routePoints[i]
+        ) / 1000;
+        if (dist < 2) reachableStations.push(station);
+      });
+    }
+    // Pick station with highest charging speed
+    reachableStations.sort((a, b) => {
+      const maxA = Math.max(...a.connections.map((c: any) => c.powerKW || 0));
+      const maxB = Math.max(...b.connections.map((c: any) => c.powerKW || 0));
+      return maxB - maxA;
+    });
+    return reachableStations[0] || null;
+  }, [directionsResponse, exceedsRange, stations, batteryRange]);
+
+  // Calculate how much extra range is needed
+  const extraRangeNeeded = exceedsRange && distance
+    ? Math.max(0, parseFloat(distance.replace(/[^\d.]/g, "")) - batteryRange)
+    : 0;
+
   if (loadError) return <div>Failed to load Google Maps: {String(loadError)}</div>;
   if (!isLoaded || !initialCenter.current) {
     return (
@@ -326,12 +381,12 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
         )}
       </GoogleMap>
 
-      {/* Route info + battery warning */}
+      {/* Route info + battery warning + charging suggestion */}
       {distance && duration && (
         <div
           style={{
             position: "absolute",
-            bottom: 20,
+            bottom: bestChargingStation ? 80 : 20,
             left: "50%",
             transform: "translateX(-50%)",
             background: "#fff",
@@ -344,10 +399,59 @@ export default function MapWeb({ onLocationChange, start, end, batteryRange }: P
             Distance: <strong>{distance}</strong> – Duration: <strong>{duration}</strong>
           </p>
           {exceedsRange && (
-            <p style={{ color: "red", fontWeight: "bold" }}>
-              Route exceeds your battery range ({batteryRange} km)!
-            </p>
+            <>
+              <p style={{ color: "red", fontWeight: "bold" }}>
+                Route exceeds your battery range ({batteryRange} km)!
+              </p>
+              {bestChargingStation && (
+                <p style={{ color: "#d32f2f", marginTop: 8 }}>
+                  Route exceeds your range.<br />
+                  The vehicle needs to charge at <strong>{bestChargingStation.title}</strong> to gain at least <strong>{extraRangeNeeded} km</strong> more range.
+                </p>
+              )}
+            </>
           )}
+        </div>
+      )}
+
+      {/* Charging station suggestion */}
+      {exceedsRange && bestChargingStation && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 20,
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "#e6f4fe",
+            padding: "14px 18px",
+            borderRadius: "12px",
+            boxShadow: "0 2px 6px rgba(0,0,0,0.2)",
+            minWidth: 320,
+          }}
+        >
+          <h4>Suggested Charging Stop</h4>
+          <p>
+            <strong>{bestChargingStation.title}</strong>
+            <br />
+            {bestChargingStation.address}
+          </p>
+          <p>
+            Charging speed: <strong>
+              {Math.max(...bestChargingStation.connections.map((c: any) => c.powerKW || 0))} kW
+            </strong>
+          </p>
+          <p>
+            Estimated charging time: <strong>
+              {estimateChargingTime(
+                batteryRange, // assume battery is nearly empty
+                bestChargingStation,
+                75 // replace with your vehicle's battery capacity in kWh
+              ) || "N/A"} min
+            </strong>
+          </p>
+          <p>
+            Arrival time: <strong>{duration}</strong>
+          </p>
         </div>
       )}
 
