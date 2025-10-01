@@ -1,6 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import MapWeb from "../components/Map.web";
 
 export default function Index() {
@@ -10,18 +17,48 @@ export default function Index() {
   const [end, setEnd] = useState<string>("");
   const [batteryRange, setBatteryRange] = useState<string>("");
   const [rangeError, setRangeError] = useState<string>("");
-  const [batteryCapacity, setBatteryCapacity] = useState<string>("");
-  const [capacityError, setCapacityError] = useState<string>("");
+
+  // Places Autocomplete predictions
+  const [startPredictions, setStartPredictions] = useState<
+    google.maps.places.AutocompletePrediction[]
+  >([]);
+  const [endPredictions, setEndPredictions] = useState<
+    google.maps.places.AutocompletePrediction[]
+  >([]);
+  const [showStartPreds, setShowStartPreds] = useState<boolean>(false);
+  const [showEndPreds, setShowEndPreds] = useState<boolean>(false);
+  const acServiceRef = useRef<google.maps.places.AutocompleteService | null>(
+    null
+  );
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Selected precise places
+  const [originPlaceId, setOriginPlaceId] = useState<string | null>(null);
+  const [destinationPlaceId, setDestinationPlaceId] = useState<string | null>(
+    null
+  );
 
   // Track GPS location from MapWeb
-  const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [currentLocation, setCurrentLocation] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
 
   // Store the route only when Plan is pressed
   const [plannedStart, setPlannedStart] = useState<string | null>(null);
   const [plannedEnd, setPlannedEnd] = useState<string | null>(null);
+  const [plannedOriginPlaceId, setPlannedOriginPlaceId] = useState<
+    string | null
+  >(null);
+  const [plannedDestinationPlaceId, setPlannedDestinationPlaceId] = useState<
+    string | null
+  >(null);
   const [plannedRange, setPlannedRange] = useState<number>(0);
 
-  // Handle numeric input for range
+  // Flag set when MapWeb finished loading Maps JS (avoids double loader error)
+  const [isMapsReady, setIsMapsReady] = useState(false);
+
+  // Handle numeric input
   const handleRangeChange = (text: string) => {
     const numericValue = text.replace(/[^0-9]/g, "");
     setBatteryRange(numericValue);
@@ -61,6 +98,8 @@ export default function Index() {
     // Lock in the planned values
     setPlannedStart(startCoords || startInput);
     setPlannedEnd(end);
+    setPlannedOriginPlaceId(originPlaceId);
+    setPlannedDestinationPlaceId(destinationPlaceId);
     setPlannedRange(Number(batteryRange));
 
     console.log("Planned route:", {
@@ -79,7 +118,7 @@ export default function Index() {
 
     try {
       const res = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${loc.lat},${loc.lng}&key=YOUR_GOOGLE_MAPS_API_KEY`
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${loc.lat},${loc.lng}&key=${process.env.EXPO_PUBLIC_MAPS_WEB_KEY}`
       );
       const json = await res.json();
       if (json.results && json.results.length > 0) {
@@ -93,11 +132,74 @@ export default function Index() {
     }
   };
 
+  // Initialize AutocompleteService when maps is ready (web only)
+  useEffect(() => {
+    if (!isMapsReady || Platform.OS !== "web") return;
+    if (!acServiceRef.current) {
+      // @ts-ignore - global google injected by loader
+      acServiceRef.current = new google.maps.places.AutocompleteService();
+    }
+  }, [isMapsReady]);
+
+  // Debounced prediction fetcher
+  const requestPredictions = (text: string, which: "start" | "end") => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      if (!acServiceRef.current || !text || text.length < 2) {
+        which === "start" ? setStartPredictions([]) : setEndPredictions([]);
+        return;
+      }
+      const opts: google.maps.places.AutocompletionRequest = {
+        input: text,
+        // Optional: bias to current location if we have it
+        ...(currentLocation && {
+          location: new google.maps.LatLng(
+            currentLocation.lat,
+            currentLocation.lng
+          ),
+          radius: 30000, // 30km
+        }),
+      } as any;
+      acServiceRef.current.getPlacePredictions(opts, (preds, status) => {
+        if (status === "OK" && preds) {
+          which === "start"
+            ? setStartPredictions(preds)
+            : setEndPredictions(preds);
+        } else {
+          which === "start" ? setStartPredictions([]) : setEndPredictions([]);
+        }
+      });
+    }, 180);
+  };
+
+  const pickPrediction = (
+    pred: google.maps.places.AutocompletePrediction,
+    which: "start" | "end"
+  ) => {
+    if (which === "start") {
+      setStartInput(pred.description);
+      setStartCoords(null);
+      setOriginPlaceId(pred.place_id);
+      setShowStartPreds(false);
+      setStartPredictions([]);
+    } else {
+      setEnd(pred.description);
+      setDestinationPlaceId(pred.place_id);
+      setShowEndPreds(false);
+      setEndPredictions([]);
+    }
+  };
+
   return (
     <View style={{ flex: 1 }}>
       {/* Toolbar */}
       <View style={styles.toolbar}>
-        <Ionicons name="navigate-outline" size={18} color="#9ca3af" style={styles.icon} />
+        <Ionicons
+          name="navigate-outline"
+          size={18}
+          color="#9ca3af"
+          style={styles.icon}
+        />
 
         {/* From input with location button */}
         <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
@@ -109,6 +211,17 @@ export default function Index() {
             onChangeText={(val) => {
               setStartInput(val);
               setStartCoords(null);
+              setOriginPlaceId(null);
+              if (Platform.OS === "web") {
+                setShowStartPreds(true);
+                requestPredictions(val, "start");
+              }
+            }}
+            onFocus={() => {
+              if (Platform.OS === "web") {
+                setShowStartPreds(true);
+                requestPredictions(startInput, "start");
+              }
             }}
           />
           {currentLocation && (
@@ -134,7 +247,20 @@ export default function Index() {
           placeholder="To"
           placeholderTextColor="#9ca3af"
           value={end}
-          onChangeText={setEnd}
+          onChangeText={(val) => {
+            setEnd(val);
+            setDestinationPlaceId(null);
+            if (Platform.OS === "web") {
+              setShowEndPreds(true);
+              requestPredictions(val, "end");
+            }
+          }}
+          onFocus={() => {
+            if (Platform.OS === "web") {
+              setShowEndPreds(true);
+              requestPredictions(end, "end");
+            }
+          }}
         />
 
         <View style={styles.divider} />
@@ -168,25 +294,77 @@ export default function Index() {
           style={({ pressed }) => [
             styles.button,
             pressed && styles.buttonPressed,
-            (!startInput || !end || !batteryRange || !!rangeError) && styles.buttonDisabled,
+            (!startInput || !end || !batteryRange || !!rangeError) &&
+              styles.buttonDisabled,
           ]}
         >
-          <Ionicons name="car-sport-outline" size={16} color="white" style={{ marginRight: 4 }} />
+          <Ionicons
+            name="car-sport-outline"
+            size={16}
+            color="white"
+            style={{ marginRight: 4 }}
+          />
           <Text style={styles.buttonText}>Plan</Text>
         </Pressable>
       </View>
 
-  {rangeError ? <Text style={styles.error}>{rangeError}</Text> : null}
-  {capacityError ? <Text style={styles.error}>{capacityError}</Text> : null}
+      {rangeError ? <Text style={styles.error}>{rangeError}</Text> : null}
+
+      {/* Suggestions dropdowns (web only) */}
+      {Platform.OS === "web" && (showStartPreds || showEndPreds) && (
+        <View style={styles.suggestionsContainer}>
+          {showStartPreds && startPredictions.length > 0 && (
+            <View style={styles.suggestionsList}>
+              {startPredictions.slice(0, 8).map((p) => (
+                <Pressable
+                  key={p.place_id}
+                  onPress={() => pickPrediction(p, "start")}
+                  style={styles.suggestionItem}
+                >
+                  <Ionicons
+                    name="location-outline"
+                    size={14}
+                    color="#6b7280"
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text style={styles.suggestionText}>{p.description}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+          {showEndPreds && endPredictions.length > 0 && (
+            <View style={styles.suggestionsList}>
+              {endPredictions.slice(0, 8).map((p) => (
+                <Pressable
+                  key={p.place_id}
+                  onPress={() => pickPrediction(p, "end")}
+                  style={styles.suggestionItem}
+                >
+                  <Ionicons
+                    name="location-outline"
+                    size={14}
+                    color="#6b7280"
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text style={styles.suggestionText}>{p.description}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
 
       {/* Map */}
       <View style={{ flex: 1 }}>
         <MapWeb
-          start={plannedStart || ""}   // only sends planned values
+          start={plannedStart || ""} // only sends planned values
           end={plannedEnd || ""}
+          originPlaceId={plannedOriginPlaceId || undefined}
+          destinationPlaceId={plannedDestinationPlaceId || undefined}
           batteryRange={plannedRange}
           batteryCapacity={Number(batteryCapacity) || 0}
           onLocationChange={(loc) => setCurrentLocation(loc)}
+          onMapsReady={() => setIsMapsReady(true)}
         />
       </View>
     </View>
@@ -244,4 +422,33 @@ const styles = StyleSheet.create({
     fontFamily: "System",
   },
   error: { color: "red", fontSize: 13, marginLeft: 20, marginTop: -4 },
+  suggestionsContainer: {
+    position: "absolute",
+    zIndex: 9999,
+    left: 12,
+    right: 12,
+    top: 70, // just under the toolbar
+  },
+  suggestionsList: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    paddingVertical: 4,
+    marginBottom: 8,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "#e5e7eb",
+  },
+  suggestionItem: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  suggestionText: {
+    fontSize: 14,
+    color: "#111827",
+  },
 });
