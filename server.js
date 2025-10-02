@@ -1,6 +1,7 @@
 //Get all charging stations from local database
 
 require('dotenv').config({ quiet: true });
+require('dotenv').config({ quiet: true });
 const express = require("express");
 const cors = require("cors");
 const fetch = require("node-fetch");
@@ -82,7 +83,7 @@ app.get("/api/charging-stations", async (req, res) => {
       // Fallback to all of Sweden if no bounds provided
       apiUrl += `&maxresults=${maxResults}`;
     }
-
+    
     const response = await fetch(apiUrl, {
         headers: {
           "User-Agent": "Chargify/1.0 (x@email.com)",
@@ -91,11 +92,13 @@ app.get("/api/charging-stations", async (req, res) => {
       }
     );
     
+    
     if (!response.ok) {
       throw new Error(
         `Open Charge Map error: ${response.status} ${response.statusText}`
       );
     }
+    
     
     const data = await response.json();
 
@@ -117,6 +120,12 @@ app.get("/api/charging-stations", async (req, res) => {
         quantity: conn.Quantity,
       })),
     }));
+
+    // Store in cache
+    cache.set(cacheKey, {
+      data: formatted,
+      timestamp: Date.now()
+    });
 
     res.json(formatted);
   } catch (err) {
