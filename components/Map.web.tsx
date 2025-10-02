@@ -129,8 +129,6 @@ export default function MapWeb({
         maxResults = "1000";
       }
 
-      console.log(`Fetching stations for zoom level ${zoomLevel} with maxResults: ${maxResults}`);
-
       const params = new URLSearchParams({
         north: ne.lat().toString(),
         south: sw.lat().toString(),
@@ -484,28 +482,95 @@ export default function MapWeb({
         )}
       </GoogleMap>
 
-      {/* Route info + battery warning */}
+      {/* Route info card - Google Maps style */}
       {distance && duration && (
         <div
           style={{
             position: "absolute",
-            bottom: 20,
-            left: "50%",
-            transform: "translateX(-50%)",
+            top: 20,
+            left: 20,
             background: "#fff",
-            padding: "10px 16px",
-            borderRadius: "12px",
-            boxShadow: "0 2px 6px rgba(0,0,0,0.2)",
+            padding: "16px 20px",
+            borderRadius: "8px",
+            boxShadow: "0 2px 10px rgba(0,0,0,0.15)",
+            border: "1px solid rgba(0,0,0,0.08)",
+            fontFamily: "Roboto, Arial, sans-serif",
+            fontSize: "14px",
+            minWidth: "200px",
+            zIndex: 1000,
           }}
         >
-          <p>
-            Distance: <strong>{distance}</strong> – Duration:{" "}
-            <strong>{duration}</strong>
-          </p>
+          <div style={{ marginBottom: "8px", display: "flex", alignItems: "center" }}>
+            <div style={{
+              width: "16px",
+              height: "16px",
+              backgroundColor: "#4285f4",
+              borderRadius: "50%",
+              marginRight: "8px",
+              flexShrink: 0
+            }}></div>
+            <div style={{ color: "#202124", fontWeight: "500" }}>Route Details</div>
+          </div>
+          
+          <div style={{ display: "flex", alignItems: "center", marginBottom: "4px" }}>
+            <div style={{
+              width: "16px",
+              height: "16px",
+              marginRight: "8px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="#5f6368">
+                <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/>
+                <path d="M7 12h2v5H7zm4-6h2v11h-2zm4 3h2v8h-2z"/>
+              </svg>
+            </div>
+            <span style={{ color: "#202124", fontWeight: "500" }}>{distance}</span>
+          </div>
+          
+          <div style={{ display: "flex", alignItems: "center" }}>
+            <div style={{
+              width: "16px",
+              height: "16px",
+              marginRight: "8px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="#5f6368">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+              </svg>
+            </div>
+            <span style={{ color: "#5f6368" }}>{duration}</span>
+          </div>
+
           {exceedsRange && (
-            <p style={{ color: "red", fontWeight: "bold" }}>
-              Route exceeds your battery range ({batteryRange} km)!
-            </p>
+            <div style={{
+              marginTop: "12px",
+              padding: "8px 12px",
+              backgroundColor: "#fef7e0",
+              border: "1px solid #fbbc04",
+              borderRadius: "4px",
+              display: "flex",
+              alignItems: "center"
+            }}>
+              <div style={{
+                width: "16px",
+                height: "16px",
+                marginRight: "8px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="#ea4335">
+                  <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+                </svg>
+              </div>
+              <span style={{ color: "#ea4335", fontSize: "12px", fontWeight: "500" }}>
+                Route exceeds battery range ({batteryRange} km)
+              </span>
+            </div>
           )}
         </div>
       )}
