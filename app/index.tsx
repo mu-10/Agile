@@ -1,12 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import {
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
+    Platform,
+    Pressable,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
 } from "react-native";
 import MapWeb from "../components/Map.web";
 
@@ -16,7 +16,9 @@ export default function Index() {
   const [startCoords, setStartCoords] = useState<string | null>(null);
   const [end, setEnd] = useState<string>("");
   const [batteryRange, setBatteryRange] = useState<string>("");
+  const [batteryCapacity, setBatteryCapacity] = useState<string>("");
   const [rangeError, setRangeError] = useState<string>("");
+  const [capacityError, setCapacityError] = useState<string>("");
 
   // Places Autocomplete predictions
   const [startPredictions, setStartPredictions] = useState<
@@ -290,11 +292,11 @@ export default function Index() {
         {/* Plan button */}
         <Pressable
           onPress={onPlan}
-          disabled={!startInput || !end || !batteryRange || !!rangeError}
+          disabled={!startInput || !end || !batteryRange || !batteryCapacity || !!rangeError || !!capacityError}
           style={({ pressed }) => [
             styles.button,
             pressed && styles.buttonPressed,
-            (!startInput || !end || !batteryRange || !!rangeError) &&
+            (!startInput || !end || !batteryRange || !batteryCapacity || !!rangeError || !!capacityError) &&
               styles.buttonDisabled,
           ]}
         >
@@ -309,6 +311,7 @@ export default function Index() {
       </View>
 
       {rangeError ? <Text style={styles.error}>{rangeError}</Text> : null}
+      {capacityError ? <Text style={styles.error}>{capacityError}</Text> : null}
 
       {/* Suggestions dropdowns (web only) */}
       {Platform.OS === "web" && (showStartPreds || showEndPreds) && (

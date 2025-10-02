@@ -6,7 +6,6 @@ import {
   useJsApiLoader,
 } from "@react-google-maps/api";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
 
 type Props = {
   onLocationChange: (loc: { lat: number; lng: number }) => void;
@@ -16,6 +15,7 @@ type Props = {
   originPlaceId?: string;
   destinationPlaceId?: string;
   batteryRange: number;
+  batteryCapacity: number;
   onMapsReady?: () => void; // notify parent when Maps JS is ready (web)
 };
 
@@ -28,6 +28,7 @@ export default function MapWeb({
   originPlaceId,
   destinationPlaceId,
   batteryRange,
+  batteryCapacity,
   onMapsReady,
 }: Props) {
   const [currentLocation, setCurrentLocation] =
@@ -117,7 +118,7 @@ export default function MapWeb({
       return distance <= MAX_DISTANCE_METERS;
     });
     return filtered;
-  }, [stations, directionsResponse, start, end, getDistanceToRoute]);
+  }
 
   // Function to fetch stations based on map bounds
   const fetchStationsInBounds = useCallback(
@@ -376,6 +377,12 @@ export default function MapWeb({
       }
     );
   }, [isLoaded, start, end, originPlaceId, destinationPlaceId, parseLatLng]);
+
+  // Battery range check
+  const exceedsRange =
+    distance && batteryRange
+      ? parseFloat(distance.replace(/[^\d.]/g, "")) > batteryRange
+      : false;
 
   // Handle clicking recommended charging station
   const handleRecommendedStationClick = useCallback((station: any) => {
