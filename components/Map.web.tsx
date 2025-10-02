@@ -5,7 +5,7 @@ import {
   Marker,
   useJsApiLoader,
 } from "@react-google-maps/api";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Props = {
   onLocationChange: (loc: { lat: number; lng: number }) => void;
@@ -88,13 +88,13 @@ export default function MapWeb({
   // Filter stations based on route proximity (only when route exists)
   const filteredStations = useCallback(() => {
     if (!directionsResponse || !start || !end) {
-      // No route planned - show all stations
+      // No route planned - show all stations in viewport
       return stations;
     }
 
     // Route exists - filter stations within 2km of route
     const MAX_DISTANCE_METERS = 2000; // 2km
-    return stations.filter((station) => {
+    const filtered = stations.filter((station) => {
       const distance = getDistanceToRoute(
         station.latitude,
         station.longitude,
@@ -102,6 +102,7 @@ export default function MapWeb({
       );
       return distance <= MAX_DISTANCE_METERS;
     });
+    return filtered;
   }, [stations, directionsResponse, start, end, getDistanceToRoute]);
 
   // Function to fetch stations based on map bounds
@@ -113,12 +114,29 @@ export default function MapWeb({
       const ne = bounds.getNorthEast();
       const sw = bounds.getSouthWest();
 
+      // Calculate zoom level to determine how many stations to request
+      const zoomLevel = mapInstance.getZoom() || 12;
+      let maxResults;
+      
+      if (zoomLevel <= 8) {
+        // Very zoomed out - request more stations for country/region view
+        maxResults = "5000";
+      } else if (zoomLevel <= 10) {
+        // Medium zoom - request moderate amount for state/province view  
+        maxResults = "2000";
+      } else {
+        // Zoomed in - request fewer stations for city/local view
+        maxResults = "1000";
+      }
+
+      console.log(`Fetching stations for zoom level ${zoomLevel} with maxResults: ${maxResults}`);
+
       const params = new URLSearchParams({
         north: ne.lat().toString(),
         south: sw.lat().toString(),
         east: ne.lng().toString(),
         west: sw.lng().toString(),
-        maxResults: "200",
+        maxResults,
       });
 
       try {
@@ -190,7 +208,16 @@ export default function MapWeb({
     []
   );
 
-  // Debounced bounds change handler
+  // Unified function to fetch stations based on map bounds (always)
+  const fetchStations = useCallback(
+    (mapInstance: google.maps.Map) => {
+      // Always use bounds-based fetching for better performance
+      fetchStationsInBounds(mapInstance);
+    },
+    [fetchStationsInBounds]
+  );
+
+  // Debounced bounds change handler for optimal performance
   const debouncedFetchStations = useRef<number | null>(null);
   const onBoundsChanged = useCallback(() => {
     if (map) {
@@ -199,21 +226,21 @@ export default function MapWeb({
         clearTimeout(debouncedFetchStations.current);
       }
 
-      // Set new timeout
+      // Set new timeout - always fetch on bounds change for optimal performance
       debouncedFetchStations.current = setTimeout(() => {
-        fetchStationsInBounds(map);
-      }, 500) as unknown as number; // Wait 500ms after user stops zooming/panning
+        fetchStations(map);
+      }, 300) as unknown as number; // Reduced timeout for more responsive updates
     }
-  }, [map, fetchStationsInBounds]);
+  }, [map, fetchStations]);
 
   // Handle map load
   const onLoad = useCallback(
     (mapInstance: google.maps.Map) => {
       setMap(mapInstance);
       // Initial fetch when map loads
-      fetchStationsInBounds(mapInstance);
+      fetchStations(mapInstance);
     },
-    [fetchStationsInBounds]
+    [fetchStations]
   );
 
   // Get user location
@@ -380,9 +407,18 @@ export default function MapWeb({
         )}
 
         {/* Charging station markers - filtered by route proximity */}
-        {!loadingStations &&
-          Array.isArray(filteredStations()) &&
-          filteredStations().map((station: any) => (
+        {(() => {
+          const stationsToRender = filteredStations();
+          
+          if (loadingStations) {
+            return null;
+          }
+          
+          if (!Array.isArray(stationsToRender) || stationsToRender.length === 0) {
+            return null;
+          }
+          
+          return stationsToRender.map((station: any) => (
             <Marker
               key={station.id}
               position={{ lat: station.latitude, lng: station.longitude }}
@@ -393,7 +429,8 @@ export default function MapWeb({
               }}
               onClick={() => setSelectedStation(station)}
             />
-          ))}
+          ));
+        })()}
 
         {/* Info window for station */}
         {selectedStation && (
