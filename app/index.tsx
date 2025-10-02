@@ -1,12 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import {
-    Platform,
-    Pressable,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 import MapWeb from "../components/Map.web";
 
@@ -63,8 +63,13 @@ export default function Index() {
   // Handle numeric input
   const handleRangeChange = (text: string) => {
     const numericValue = text.replace(/[^0-9]/g, "");
-    setBatteryRange(numericValue);
-    setRangeError(numericValue === "" ? "Range must be a number" : "");
+    if (batteryCapacity && Number(numericValue) > Number(batteryCapacity)) {
+      setBatteryRange(batteryCapacity);
+      setRangeError("Range cannot exceed capacity");
+    } else {
+      setBatteryRange(numericValue);
+      setRangeError(numericValue === "" ? "Range must be a number" : "");
+    }
   };
 
   // Handle numeric input for capacity
@@ -240,6 +245,7 @@ export default function Index() {
             </Pressable>
           )}
         </View>
+          {/* Removed obsolete autocomplete predictions dropdown. Only use the new conditional dropdown below. */}
 
         <View style={styles.divider} />
 
@@ -313,51 +319,64 @@ export default function Index() {
       {rangeError ? <Text style={styles.error}>{rangeError}</Text> : null}
       {capacityError ? <Text style={styles.error}>{capacityError}</Text> : null}
 
-      {/* Suggestions dropdowns (web only) */}
-      {Platform.OS === "web" && (showStartPreds || showEndPreds) && (
+      {/* Suggestions dropdowns (web only) - only render if showing predictions */}
+      {Platform.OS === "web" && ((showStartPreds && startInput.length > 0) || (showEndPreds && end.length > 0)) ? (
         <View style={styles.suggestionsContainer}>
-          {showStartPreds && startPredictions.length > 0 && (
+          {showStartPreds && startInput.length > 0 && (
             <View style={styles.suggestionsList}>
-              {startPredictions.slice(0, 8).map((p) => (
-                <Pressable
-                  key={p.place_id}
-                  onPress={() => pickPrediction(p, "start")}
-                  style={styles.suggestionItem}
-                >
-                  <Ionicons
-                    name="location-outline"
-                    size={14}
-                    color="#6b7280"
-                    style={{ marginRight: 6 }}
-                  />
-                  <Text style={styles.suggestionText}>{p.description}</Text>
-                </Pressable>
-              ))}
+              {startInput.length > 0 ? (
+                startPredictions.length > 0 ? (
+                  startPredictions.slice(0, 8).map((p) => (
+                    <Pressable
+                      key={p.place_id}
+                      onPress={() => pickPrediction(p, "start")}
+                      style={styles.suggestionItem}
+                    >
+                      <Ionicons
+                        name="location-outline"
+                        size={14}
+                        color="#6b7280"
+                        style={{ marginRight: 6 }}
+                      />
+                      <Text style={styles.suggestionText}>{p.description}</Text>
+                    </Pressable>
+                  ))
+                ) : (
+                  <Text style={{ padding: 10, color: "#888" }}>No address found</Text>
+                )
+              ) : null}
             </View>
           )}
-          {showEndPreds && endPredictions.length > 0 && (
+          {showEndPreds && end.length > 0 && (
             <View style={styles.suggestionsList}>
-              {endPredictions.slice(0, 8).map((p) => (
-                <Pressable
-                  key={p.place_id}
-                  onPress={() => pickPrediction(p, "end")}
-                  style={styles.suggestionItem}
-                >
-                  <Ionicons
-                    name="location-outline"
-                    size={14}
-                    color="#6b7280"
-                    style={{ marginRight: 6 }}
-                  />
-                  <Text style={styles.suggestionText}>{p.description}</Text>
-                </Pressable>
-              ))}
+              {end.length > 0 ? (
+                endPredictions.length > 0 ? (
+                  endPredictions.slice(0, 8).map((p) => (
+                    <Pressable
+                      key={p.place_id}
+                      onPress={() => pickPrediction(p, "end")}
+                      style={styles.suggestionItem}
+                    >
+                      <Ionicons
+                        name="location-outline"
+                        size={14}
+                        color="#6b7280"
+                        style={{ marginRight: 6 }}
+                      />
+                      <Text style={styles.suggestionText}>{p.description}</Text>
+                    </Pressable>
+                  ))
+                ) : (
+                  <Text style={{ padding: 10, color: "#888" }}>No address found</Text>
+                )
+              ) : null}
             </View>
           )}
         </View>
-      )}
+      ) : null}
 
-      {/* Map */}
+  {/* Always show a solid grey divider between input fields and map */}
+  <View style={{ width: "100%", backgroundColor: "#f3f4f6", height: 8 }} />
       <View style={{ flex: 1 }}>
         <MapWeb
           start={plannedStart || ""} // only sends planned values
