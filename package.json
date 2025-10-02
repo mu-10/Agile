@@ -9,7 +9,12 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "jest"
+    "test": "jest",
+    "migrate": "node migrate.js",
+    "db:migrate": "node migrate.js",
+    "server": "set USE_DATABASE=true&& node server.js",
+    "server:api": "set USE_DATABASE=false&& node server.js",
+    "server:db": "set USE_DATABASE=true&& node server.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
@@ -17,6 +22,7 @@
     "@react-navigation/bottom-tabs": "^7.4.0",
     "@react-navigation/elements": "^2.6.3",
     "@react-navigation/native": "^7.1.8",
+    "better-sqlite3": "^12.4.1",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
     "expo": "~54.0.8",
@@ -43,7 +49,8 @@
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
     "react-native-web": "~0.21.0",
-    "react-native-worklets": "0.5.1"
+    "react-native-worklets": "0.5.1",
+    "sqlite3": "^5.1.7"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.8.0",

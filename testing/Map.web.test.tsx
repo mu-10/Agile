@@ -17,6 +17,7 @@ test("renders Google Map and markers", async () => {
     start="Stockholm"
     end="Gothenburg"
     batteryRange={350}
+    batteryCapacity={75}
   />);
 
   // GoogleMap is rendered

@@ -5,7 +5,7 @@ import {
   Marker,
   useJsApiLoader,
 } from "@react-google-maps/api";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Props = {
   onLocationChange: (loc: { lat: number; lng: number }) => void;
@@ -15,6 +15,7 @@ type Props = {
   originPlaceId?: string;
   destinationPlaceId?: string;
   batteryRange: number;
+  batteryCapacity: number;
   onMapsReady?: () => void; // notify parent when Maps JS is ready (web)
 };
 
@@ -27,6 +28,7 @@ export default function MapWeb({
   originPlaceId,
   destinationPlaceId,
   batteryRange,
+  batteryCapacity,
   onMapsReady,
 }: Props) {
   const [currentLocation, setCurrentLocation] =
@@ -34,13 +36,26 @@ export default function MapWeb({
   const [stations, setStations] = useState<any[]>([]);
   const [loadingStations, setLoadingStations] = useState(true);
   const [selectedStation, setSelectedStation] = useState<any | null>(null);
+  const [selectedChargingStation, setSelectedChargingStation] = useState<any | null>(null); // Manually selected for routing
+  const [stableBestStation, setStableBestStation] = useState<any | null>(null); // Stable auto-selected station
+  const [alternativeStations, setAlternativeStations] = useState<any[]>([]); // Alternative charging stations
+  const [showAlternatives, setShowAlternatives] = useState<boolean>(false); // Show alternative stations
+  const [showChargingPanels, setShowChargingPanels] = useState<boolean>(false); // Stable UI state
+  const [cachedRouteKey, setCachedRouteKey] = useState<string>(""); // Cache key for route
+  const [routeStationsFetched, setRouteStationsFetched] = useState<boolean>(false); // Track if stations fetched for current route
+  const [needsChargingStations, setNeedsChargingStations] = useState<boolean>(false); // Track if we need to find charging stations
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [backendError, setBackendError] = useState<boolean>(false);
 
   const [directionsResponse, setDirectionsResponse] =
     useState<google.maps.DirectionsResult | null>(null);
+  const [chargingRouteResponse, setChargingRouteResponse] = 
+    useState<google.maps.DirectionsResult | null>(null);
+  const [alternativeRoutes, setAlternativeRoutes] = useState<google.maps.DirectionsResult[]>([]);
   const [distance, setDistance] = useState<string | null>(null);
   const [duration, setDuration] = useState<string | null>(null);
+  const [totalDistance, setTotalDistance] = useState<string | null>(null);
+  const [totalDuration, setTotalDuration] = useState<string | null>(null);
 
   // store the initial map center so it doesn't keep re-centering
   const initialCenter = useRef<google.maps.LatLngLiteral | null>(null);
@@ -86,15 +101,15 @@ export default function MapWeb({
   );
 
   // Filter stations based on route proximity (only when route exists)
-  const filteredStations = useCallback(() => {
+  function filteredStations() {
     if (!directionsResponse || !start || !end) {
-      // No route planned - show all stations
+      // No route planned - show all stations in viewport
       return stations;
     }
-
-    // Route exists - filter stations within 2km of route
+    
+    // Route exists - show stations within 2km of route
     const MAX_DISTANCE_METERS = 2000; // 2km
-    return stations.filter((station) => {
+    const filtered = stations.filter((station) => {
       const distance = getDistanceToRoute(
         station.latitude,
         station.longitude,
@@ -102,7 +117,8 @@ export default function MapWeb({
       );
       return distance <= MAX_DISTANCE_METERS;
     });
-  }, [stations, directionsResponse, start, end, getDistanceToRoute]);
+    return filtered;
+  }
 
   // Function to fetch stations based on map bounds
   const fetchStationsInBounds = useCallback(
@@ -113,12 +129,27 @@ export default function MapWeb({
       const ne = bounds.getNorthEast();
       const sw = bounds.getSouthWest();
 
+      // Calculate zoom level to determine how many stations to request
+      const zoomLevel = mapInstance.getZoom() || 12;
+      let maxResults;
+      
+      if (zoomLevel <= 8) {
+        // Very zoomed out - request more stations for country/region view
+        maxResults = "5000";
+      } else if (zoomLevel <= 10) {
+        // Medium zoom - request moderate amount for state/province view  
+        maxResults = "2000";
+      } else {
+        // Zoomed in - request fewer stations for city/local view
+        maxResults = "1000";
+      }
+
       const params = new URLSearchParams({
         north: ne.lat().toString(),
         south: sw.lat().toString(),
         east: ne.lng().toString(),
         west: sw.lng().toString(),
-        maxResults: "200",
+        maxResults,
       });
 
       try {
@@ -190,30 +221,44 @@ export default function MapWeb({
     []
   );
 
-  // Debounced bounds change handler
+  // Unified function to fetch stations based on map bounds (always)
+  const fetchStations = useCallback(
+    (mapInstance: google.maps.Map) => {
+      // Always use bounds-based fetching for better performance
+      fetchStationsInBounds(mapInstance);
+    },
+    [fetchStationsInBounds]
+  );
+
+  // Debounced bounds change handler for optimal performance
   const debouncedFetchStations = useRef<number | null>(null);
   const onBoundsChanged = useCallback(() => {
+    // Don't fetch new stations if we have a route and already fetched stations for it
+    if (directionsResponse && routeStationsFetched) {
+      return;
+    }
+    
     if (map) {
       // Clear previous timeout
       if (debouncedFetchStations.current) {
         clearTimeout(debouncedFetchStations.current);
       }
 
-      // Set new timeout
+      // Set new timeout - always fetch on bounds change for optimal performance
       debouncedFetchStations.current = setTimeout(() => {
-        fetchStationsInBounds(map);
-      }, 500) as unknown as number; // Wait 500ms after user stops zooming/panning
+        fetchStations(map);
+      }, 300) as unknown as number; // Reduced timeout for more responsive updates
     }
-  }, [map, fetchStationsInBounds]);
+  }, [map, fetchStations]);
 
   // Handle map load
   const onLoad = useCallback(
     (mapInstance: google.maps.Map) => {
       setMap(mapInstance);
       // Initial fetch when map loads
-      fetchStationsInBounds(mapInstance);
+      fetchStations(mapInstance);
     },
-    [fetchStationsInBounds]
+    [fetchStations]
   );
 
   // Get user location
@@ -339,6 +384,23 @@ export default function MapWeb({
       ? parseFloat(distance.replace(/[^\d.]/g, "")) > batteryRange
       : false;
 
+  // Handle clicking recommended charging station
+  const handleRecommendedStationClick = useCallback((station: any) => {
+    if (map && station) {
+      // Zoom to station location
+      map.setCenter({ lat: station.latitude, lng: station.longitude });
+      map.setZoom(16);
+      
+      // Show info window
+      setSelectedStation(station);
+    }
+  }, [map]);
+
+  // Calculate how much extra range is needed
+  const extraRangeNeeded = exceedsRange && distance
+    ? Math.max(0, parseFloat(distance.replace(/[^\d.]/g, "")) - batteryRange)
+    : 0;
+
   if (loadError)
     return <div>Failed to load Google Maps: {String(loadError)}</div>;
   if (!isLoaded || !initialCenter.current) {
@@ -371,18 +433,95 @@ export default function MapWeb({
           <Marker position={currentLocation} title="You are here" />
         )}
 
-        {/* Route */}
+        {/* Routes */}
         {directionsResponse && (
           <DirectionsRenderer
             directions={directionsResponse}
-            options={{ preserveViewport: true }} // prevents auto-recenter on route
+            options={{ 
+              preserveViewport: true,
+              polylineOptions: {
+                strokeColor: showChargingPanels ? "#FF6B35" : "#4285F4", // Orange for first leg, blue for single route
+                strokeWeight: 6,
+                strokeOpacity: 0.8
+              },
+              markerOptions: {
+                icon: {
+                  path: google.maps.SymbolPath.CIRCLE,
+                  scale: 8,
+                  fillColor: "#FF6B35",
+                  fillOpacity: 1,
+                  strokeColor: "#FFFFFF",
+                  strokeWeight: 2
+                }
+              }
+            }}
+          />
+        )}
+
+        {/* Alternative routes - lighter blue color */}
+        {alternativeRoutes.map((route, index) => (
+          <DirectionsRenderer
+            key={`alt-route-${index}`}
+            directions={route}
+            options={{ 
+              preserveViewport: true,
+              polylineOptions: {
+                strokeColor: "#87CEEB", // Light blue for alternative routes
+                strokeWeight: 4,
+                strokeOpacity: 0.6
+              },
+              markerOptions: {
+                icon: {
+                  path: google.maps.SymbolPath.CIRCLE,
+                  scale: 6,
+                  fillColor: "#87CEEB",
+                  fillOpacity: 0.8,
+                  strokeColor: "#FFFFFF",
+                  strokeWeight: 1
+                }
+              }
+            }}
+          />
+        ))}
+        
+        {/* Second route from charging station to destination */}
+        {chargingRouteResponse && (
+          <DirectionsRenderer
+            directions={chargingRouteResponse}
+            options={{ 
+              preserveViewport: true,
+              polylineOptions: {
+                strokeColor: "#34A853", // Green for second leg
+                strokeWeight: 6,
+                strokeOpacity: 0.8
+              },
+              markerOptions: {
+                icon: {
+                  path: google.maps.SymbolPath.CIRCLE,
+                  scale: 8,
+                  fillColor: "#34A853",
+                  fillOpacity: 1,
+                  strokeColor: "#FFFFFF",
+                  strokeWeight: 2
+                }
+              }
+            }}
           />
         )}
 
         {/* Charging station markers - filtered by route proximity */}
-        {!loadingStations &&
-          Array.isArray(filteredStations()) &&
-          filteredStations().map((station: any) => (
+        {(() => {
+          const stationsToRender = filteredStations();
+          
+          if (loadingStations) {
+            return null;
+          }
+          
+          if (!Array.isArray(stationsToRender) || stationsToRender.length === 0) {
+            return null;
+          }
+          
+          return stationsToRender.map((station: any) => (
             <Marker
               key={station.id}
               position={{ lat: station.latitude, lng: station.longitude }}
@@ -393,7 +532,8 @@ export default function MapWeb({
               }}
               onClick={() => setSelectedStation(station)}
             />
-          ))}
+          ));
+        })()}
 
         {/* Info window for station */}
         {selectedStation && (
@@ -447,28 +587,95 @@ export default function MapWeb({
         )}
       </GoogleMap>
 
-      {/* Route info + battery warning */}
+      {/* Route info card - Google Maps style */}
       {distance && duration && (
         <div
           style={{
             position: "absolute",
-            bottom: 20,
-            left: "50%",
-            transform: "translateX(-50%)",
+            top: 20,
+            left: 20,
             background: "#fff",
-            padding: "10px 16px",
-            borderRadius: "12px",
-            boxShadow: "0 2px 6px rgba(0,0,0,0.2)",
+            padding: "16px 20px",
+            borderRadius: "8px",
+            boxShadow: "0 2px 10px rgba(0,0,0,0.15)",
+            border: "1px solid rgba(0,0,0,0.08)",
+            fontFamily: "Roboto, Arial, sans-serif",
+            fontSize: "14px",
+            minWidth: "200px",
+            zIndex: 1000,
           }}
         >
-          <p>
-            Distance: <strong>{distance}</strong> – Duration:{" "}
-            <strong>{duration}</strong>
-          </p>
+          <div style={{ marginBottom: "8px", display: "flex", alignItems: "center" }}>
+            <div style={{
+              width: "16px",
+              height: "16px",
+              backgroundColor: "#4285f4",
+              borderRadius: "50%",
+              marginRight: "8px",
+              flexShrink: 0
+            }}></div>
+            <div style={{ color: "#202124", fontWeight: "500" }}>Route Details</div>
+          </div>
+          
+          <div style={{ display: "flex", alignItems: "center", marginBottom: "4px" }}>
+            <div style={{
+              width: "16px",
+              height: "16px",
+              marginRight: "8px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="#5f6368">
+                <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/>
+                <path d="M7 12h2v5H7zm4-6h2v11h-2zm4 3h2v8h-2z"/>
+              </svg>
+            </div>
+            <span style={{ color: "#202124", fontWeight: "500" }}>{distance}</span>
+          </div>
+          
+          <div style={{ display: "flex", alignItems: "center" }}>
+            <div style={{
+              width: "16px",
+              height: "16px",
+              marginRight: "8px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="#5f6368">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+              </svg>
+            </div>
+            <span style={{ color: "#5f6368" }}>{duration}</span>
+          </div>
+
           {exceedsRange && (
-            <p style={{ color: "red", fontWeight: "bold" }}>
-              Route exceeds your battery range ({batteryRange} km)!
-            </p>
+            <div style={{
+              marginTop: "12px",
+              padding: "8px 12px",
+              backgroundColor: "#fef7e0",
+              border: "1px solid #fbbc04",
+              borderRadius: "4px",
+              display: "flex",
+              alignItems: "center"
+            }}>
+              <div style={{
+                width: "16px",
+                height: "16px",
+                marginRight: "8px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="#ea4335">
+                  <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+                </svg>
+              </div>
+              <span style={{ color: "#ea4335", fontSize: "12px", fontWeight: "500" }}>
+                Route exceeds battery range ({batteryRange} km)
+              </span>
+            </div>
           )}
         </div>
       )}

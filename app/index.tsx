@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Platform,
   Pressable,
@@ -16,7 +16,9 @@ export default function Index() {
   const [startCoords, setStartCoords] = useState<string | null>(null);
   const [end, setEnd] = useState<string>("");
   const [batteryRange, setBatteryRange] = useState<string>("");
+  const [batteryCapacity, setBatteryCapacity] = useState<string>("");
   const [rangeError, setRangeError] = useState<string>("");
+  const [capacityError, setCapacityError] = useState<string>("");
 
   // Places Autocomplete predictions
   const [startPredictions, setStartPredictions] = useState<
@@ -61,17 +63,44 @@ export default function Index() {
   // Handle numeric input
   const handleRangeChange = (text: string) => {
     const numericValue = text.replace(/[^0-9]/g, "");
-    setBatteryRange(numericValue);
-    setRangeError(numericValue === "" ? "Range must be a number" : "");
+    if (batteryCapacity && Number(numericValue) > Number(batteryCapacity)) {
+      setBatteryRange(batteryCapacity);
+      setRangeError("Range cannot exceed capacity");
+    } else {
+      setBatteryRange(numericValue);
+      setRangeError(numericValue === "" ? "Range must be a number" : "");
+    }
+  };
+
+  // Handle numeric input for capacity
+  const handleCapacityChange = (text: string) => {
+    const numericValue = text.replace(/[^0-9]/g, "");
+    setBatteryCapacity(numericValue);
+    if (numericValue === "") {
+      setCapacityError("Capacity must be a number");
+    } else if (Number(numericValue) > 1000) {
+      setCapacityError("Please enter a valid capacity.");
+    } else {
+      setCapacityError("");
+    }
   };
 
   // Plan button
   const onPlan = () => {
+    let valid = true;
     if (!batteryRange || isNaN(Number(batteryRange))) {
       setRangeError("Please enter a valid number for battery range");
-      return;
+      valid = false;
+    } else {
+      setRangeError("");
     }
-    setRangeError("");
+    if (!batteryCapacity || isNaN(Number(batteryCapacity)) || Number(batteryCapacity) > 1000) {
+      setCapacityError(!batteryCapacity || isNaN(Number(batteryCapacity)) ? "Please enter a valid number for capacity" : "Please enter a valid capacity.");
+      valid = false;
+    } else {
+      setCapacityError("");
+    }
+    if (!valid) return;
 
     // Lock in the planned values
     setPlannedStart(startCoords || startInput);
@@ -84,6 +113,7 @@ export default function Index() {
       start: startCoords || startInput,
       end,
       batteryRange,
+      batteryCapacity,
     });
   };
 
@@ -215,6 +245,7 @@ export default function Index() {
             </Pressable>
           )}
         </View>
+          {/* Removed obsolete autocomplete predictions dropdown. Only use the new conditional dropdown below. */}
 
         <View style={styles.divider} />
 
@@ -252,14 +283,26 @@ export default function Index() {
           onChangeText={handleRangeChange}
         />
 
+        <View style={styles.divider} />
+
+        {/* Battery capacity */}
+        <TextInput
+          style={styles.input}
+          placeholder="Capacity km"
+          placeholderTextColor="#9ca3af"
+          value={batteryCapacity}
+          keyboardType="numeric"
+          onChangeText={handleCapacityChange}
+        />
+
         {/* Plan button */}
         <Pressable
           onPress={onPlan}
-          disabled={!startInput || !end || !batteryRange || !!rangeError}
+          disabled={!startInput || !end || !batteryRange || !batteryCapacity || !!rangeError || !!capacityError}
           style={({ pressed }) => [
             styles.button,
             pressed && styles.buttonPressed,
-            (!startInput || !end || !batteryRange || !!rangeError) &&
+            (!startInput || !end || !batteryRange || !batteryCapacity || !!rangeError || !!capacityError) &&
               styles.buttonDisabled,
           ]}
         >
@@ -274,52 +317,66 @@ export default function Index() {
       </View>
 
       {rangeError ? <Text style={styles.error}>{rangeError}</Text> : null}
+      {capacityError ? <Text style={styles.error}>{capacityError}</Text> : null}
 
-      {/* Suggestions dropdowns (web only) */}
-      {Platform.OS === "web" && (showStartPreds || showEndPreds) && (
+      {/* Suggestions dropdowns (web only) - only render if showing predictions */}
+      {Platform.OS === "web" && ((showStartPreds && startInput.length > 0) || (showEndPreds && end.length > 0)) ? (
         <View style={styles.suggestionsContainer}>
-          {showStartPreds && startPredictions.length > 0 && (
+          {showStartPreds && startInput.length > 0 && (
             <View style={styles.suggestionsList}>
-              {startPredictions.slice(0, 8).map((p) => (
-                <Pressable
-                  key={p.place_id}
-                  onPress={() => pickPrediction(p, "start")}
-                  style={styles.suggestionItem}
-                >
-                  <Ionicons
-                    name="location-outline"
-                    size={14}
-                    color="#6b7280"
-                    style={{ marginRight: 6 }}
-                  />
-                  <Text style={styles.suggestionText}>{p.description}</Text>
-                </Pressable>
-              ))}
+              {startInput.length > 0 ? (
+                startPredictions.length > 0 ? (
+                  startPredictions.slice(0, 8).map((p) => (
+                    <Pressable
+                      key={p.place_id}
+                      onPress={() => pickPrediction(p, "start")}
+                      style={styles.suggestionItem}
+                    >
+                      <Ionicons
+                        name="location-outline"
+                        size={14}
+                        color="#6b7280"
+                        style={{ marginRight: 6 }}
+                      />
+                      <Text style={styles.suggestionText}>{p.description}</Text>
+                    </Pressable>
+                  ))
+                ) : (
+                  <Text style={{ padding: 10, color: "#888" }}>No address found</Text>
+                )
+              ) : null}
             </View>
           )}
-          {showEndPreds && endPredictions.length > 0 && (
+          {showEndPreds && end.length > 0 && (
             <View style={styles.suggestionsList}>
-              {endPredictions.slice(0, 8).map((p) => (
-                <Pressable
-                  key={p.place_id}
-                  onPress={() => pickPrediction(p, "end")}
-                  style={styles.suggestionItem}
-                >
-                  <Ionicons
-                    name="location-outline"
-                    size={14}
-                    color="#6b7280"
-                    style={{ marginRight: 6 }}
-                  />
-                  <Text style={styles.suggestionText}>{p.description}</Text>
-                </Pressable>
-              ))}
+              {end.length > 0 ? (
+                endPredictions.length > 0 ? (
+                  endPredictions.slice(0, 8).map((p) => (
+                    <Pressable
+                      key={p.place_id}
+                      onPress={() => pickPrediction(p, "end")}
+                      style={styles.suggestionItem}
+                    >
+                      <Ionicons
+                        name="location-outline"
+                        size={14}
+                        color="#6b7280"
+                        style={{ marginRight: 6 }}
+                      />
+                      <Text style={styles.suggestionText}>{p.description}</Text>
+                    </Pressable>
+                  ))
+                ) : (
+                  <Text style={{ padding: 10, color: "#888" }}>No address found</Text>
+                )
+              ) : null}
             </View>
           )}
         </View>
-      )}
+      ) : null}
 
-      {/* Map */}
+  {/* Always show a solid grey divider between input fields and map */}
+  <View style={{ width: "100%", backgroundColor: "#f3f4f6", height: 8 }} />
       <View style={{ flex: 1 }}>
         <MapWeb
           start={plannedStart || ""} // only sends planned values
@@ -327,6 +384,7 @@ export default function Index() {
           originPlaceId={plannedOriginPlaceId || undefined}
           destinationPlaceId={plannedDestinationPlaceId || undefined}
           batteryRange={plannedRange}
+          batteryCapacity={Number(batteryCapacity) || 0}
           onLocationChange={(loc) => setCurrentLocation(loc)}
           onMapsReady={() => setIsMapsReady(true)}
         />

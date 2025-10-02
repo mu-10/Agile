@@ -1,6 +1,7 @@
 # Chargify
 
 ## Electric Vehicle Planner
+A project made for course DAT257 Agile software project management.
 
 ## Get started
 
@@ -10,9 +11,11 @@
    npm install
    ```
 
-2. Start the backend
+2. Start the backend:
+
    ```bash
-   node server.js
+   # Start backend with database is there is data, otherwise API mode is used
+   npm run server
    ```
 
 3. Start the app
@@ -28,14 +31,44 @@ In the output, you'll find options to open the app in a
 - [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
 - [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
 
+## Database
+
+### Database Setup
+
+The application uses SQLite to store charging station data locally for better performance and reliability.
+
+**Update the database:**
+```bash
+# Migrate data from Open Charge Map API to local database
+npm run migrate
+```
+
+### Database Schema
+
+```sql
+CREATE TABLE charging_stations (
+  id INTEGER PRIMARY KEY,
+  title TEXT,
+  address TEXT,
+  town TEXT,
+  state TEXT,
+  latitude REAL NOT NULL,
+  longitude REAL NOT NULL,
+  number_of_points INTEGER,
+  status_type TEXT,
+  operator TEXT,
+  connections TEXT, -- JSON
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
 ## Testing
 
 ### Running Tests
 
 ```bash
 npm test
-# or
-npx jest
 ```
 
 ### What the Tests Cover
