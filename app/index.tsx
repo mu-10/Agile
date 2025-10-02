@@ -129,13 +129,15 @@ export default function Index() {
       );
       const json = await res.json();
       if (json.results && json.results.length > 0) {
+        // Always set the actual address from reverse geocoding
         setStartInput(json.results[0].formatted_address);
       } else {
-        setStartInput("Current location");
+        // Fallback to coordinates if no address found
+        setStartInput(`${loc.lat},${loc.lng}`);
       }
     } catch (err) {
       console.error("Reverse geocoding failed:", err);
-      setStartInput("Current location");
+      setStartInput(`${loc.lat},${loc.lng}`);
     }
   };
 
