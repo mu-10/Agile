@@ -220,8 +220,6 @@ app.post("/api/find-charging-stop", async (req, res) => {
     // Need to find a charging station
     // Calculate how far we can travel before needing to charge (with 20% safety buffer)
     const maxDistanceBeforeCharging = currentRange * 0.8;
-    
-    console.log(`\nRoute: ${totalDistance.toFixed(1)}km total, need charging (range: ${currentRange}km, max before charging: ${maxDistanceBeforeCharging.toFixed(1)}km)`);
 
     let stations = [];
 
