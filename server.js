@@ -392,7 +392,7 @@ app.post("/api/find-charging-stop", async (req, res) => {
           remainingRangeAtDestination: Math.round((parseFloat(batteryRange) - distanceToEnd) * 10) / 10
         };
       })
-      .sort((a, b) => a.efficiencyScore - b.efficiencyScore)
+      .sort((a, b) => b.efficiencyScore - a.efficiencyScore)
       .slice(0, 5); // Top 5 options
 
     if (scoredStations.length === 0) {
