@@ -33,6 +33,9 @@ type Props = {
 
 const chargingIcon = "https://maps.google.com/mapfiles/ms/icons/green-dot.png";
 
+// Move libraries outside component to avoid reload warning
+const GOOGLE_MAPS_LIBRARIES: ("places" | "geometry")[] = ["places", "geometry"];
+
 export default function MapWeb({
   onLocationChange,
   start,
@@ -49,6 +52,10 @@ export default function MapWeb({
   const [loadingStations, setLoadingStations] = useState(true);
   const [selectedStation, setSelectedStation] = useState<any | null>(null);
   const [selectedChargingStation, setSelectedChargingStation] = useState<any | null>(null); // Manually selected for routing
+  const [autoSelectedChargingStation, setAutoSelectedChargingStation] = useState<any | null>(null); // Auto-selected charging station
+  const [chargingStopInfo, setChargingStopInfo] = useState<any | null>(null); // Charging stop route details
+  const [loadingChargingStop, setLoadingChargingStop] = useState<boolean>(false);
+  const [showChargingRoute, setShowChargingRoute] = useState<boolean>(false); // Show charging route UI
   const [stableBestStation, setStableBestStation] = useState<any | null>(null); // Stable auto-selected station
   const [alternativeStations, setAlternativeStations] = useState<any[]>([]); // Alternative charging stations
   const [showAlternatives, setShowAlternatives] = useState<boolean>(false); // Show alternative stations
@@ -74,13 +81,129 @@ export default function MapWeb({
 
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: process.env.EXPO_PUBLIC_MAPS_WEB_KEY!,
-    libraries: ["places", "geometry"], // Add geometry library for distance calculations
+    libraries: GOOGLE_MAPS_LIBRARIES, // Use static array to avoid reload warning
   });
 
   // Reuse a single DirectionsService instance
   const directionsServiceRef = useRef<google.maps.DirectionsService | null>(
     null
   );
+
+  // Helper to parse "lat,lng" strings
+  const parseLatLng = useCallback(
+    (val: string): google.maps.LatLngLiteral | null => {
+      const parts = val.split(",");
+      if (parts.length !== 2) return null;
+      const lat = parseFloat(parts[0]);
+      const lng = parseFloat(parts[1]);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+      return null;
+    },
+    []
+  );
+
+  // Function to find optimal charging stop automatically
+  const findChargingStop = useCallback(async (
+    startCoords: google.maps.LatLngLiteral,
+    endCoords: google.maps.LatLngLiteral
+  ) => {
+    setLoadingChargingStop(true);
+    try {
+      const response = await fetch('http://localhost:3001/api/find-charging-stop', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          startLat: startCoords.lat,
+          startLng: startCoords.lng,
+          endLat: endCoords.lat,
+          endLng: endCoords.lng,
+          batteryRange,
+          batteryCapacity,
+          currentBatteryPercent: 100 // Assume full battery at start
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setChargingStopInfo(data);
+      
+      if (data.needsCharging && data.chargingStation) {
+        setAutoSelectedChargingStation(data.chargingStation);
+        setAlternativeStations(data.alternatives || []);
+        setShowChargingRoute(true);
+        
+        // Calculate route via charging station
+        await calculateChargingRoute(data.chargingStation, startCoords, endCoords);
+      } else {
+        setAutoSelectedChargingStation(null);
+        setShowChargingRoute(false);
+        setChargingRouteResponse(null);
+      }
+      
+      setBackendError(false);
+    } catch (error) {
+      console.error("Error finding charging stop:", error);
+      setChargingStopInfo(null);
+      setAutoSelectedChargingStation(null);
+      setShowChargingRoute(false);
+      setBackendError(true);
+    } finally {
+      setLoadingChargingStop(false);
+    }
+  }, [batteryRange, batteryCapacity]);
+
+  // Function to calculate route via charging station
+  const calculateChargingRoute = useCallback(async (
+    station: any, 
+    startCoords: google.maps.LatLngLiteral, 
+    endCoords: google.maps.LatLngLiteral
+  ) => {
+    if (!directionsServiceRef.current) return;
+
+    try {
+      // Calculate route from charging station to destination
+      const chargingStationCoords = { lat: station.latitude, lng: station.longitude };
+      
+      directionsServiceRef.current.route(
+        {
+          origin: chargingStationCoords,
+          destination: endCoords,
+          travelMode: google.maps.TravelMode.DRIVING,
+        },
+        (result, status) => {
+          if (status === "OK" && result) {
+            setChargingRouteResponse(result);
+          } else {
+            console.error("Charging route calculation failed:", status);
+          }
+        }
+      );
+
+      // Update main route to go to charging station
+      directionsServiceRef.current.route(
+        {
+          origin: startCoords,
+          destination: chargingStationCoords,
+          travelMode: google.maps.TravelMode.DRIVING,
+        },
+        (result, status) => {
+          if (status === "OK" && result) {
+            setDirectionsResponse(result);
+            const leg = result.routes[0].legs[0];
+            setDistance(leg.distance?.text || null);
+            setDuration(leg.duration?.text || null);
+          }
+        }
+      );
+    } catch (error) {
+      console.error("Error calculating charging route:", error);
+    }
+  }, []);
 
   // Helper function to calculate distance from a point to the route path
   const getDistanceToRoute = useCallback(
@@ -319,25 +442,23 @@ export default function MapWeb({
     onMapsReady && onMapsReady();
   }, [isLoaded]);
 
-  // Helper to parse "lat,lng" strings
-  const parseLatLng = useCallback(
-    (val: string): google.maps.LatLngLiteral | null => {
-      const parts = val.split(",");
-      if (parts.length !== 2) return null;
-      const lat = parseFloat(parts[0]);
-      const lng = parseFloat(parts[1]);
-      if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
-      return null;
-    },
-    []
-  );
-
   // Calculate route whenever inputs change
   useEffect(() => {
-    if (!isLoaded) return;
-    if (!directionsServiceRef.current) return;
-    if (!start && !originPlaceId) return; // need at least one origin signal
-    if (!end && !destinationPlaceId) return; // need at least one destination signal
+    if (!isLoaded) {
+      return;
+    }
+    if (!directionsServiceRef.current) {
+      return;
+    }
+    if (!start && !originPlaceId) {
+      return; // need at least one origin signal
+    }
+    if (!end && !destinationPlaceId) {
+      return; // need at least one destination signal
+    }
+    if (!batteryRange || batteryRange <= 0) {
+      return; // need valid battery range for charging calculations
+    }
 
     // Build origin param
     let origin:
@@ -365,8 +486,14 @@ export default function MapWeb({
       destination = parsed ? parsed : end;
     }
 
-    if (!origin || !destination) return;
+    if (!origin || !destination) {
+      console.log("Missing origin or destination:", { origin, destination });
+      return;
+    }
 
+    console.log("Making directions request with:", { origin, destination });
+
+    // Calculate the route - SIMPLIFIED VERSION FOR DEBUGGING
     directionsServiceRef.current.route(
       {
         origin,
@@ -374,14 +501,71 @@ export default function MapWeb({
         travelMode: google.maps.TravelMode.DRIVING,
         provideRouteAlternatives: false,
       },
-      (result, status) => {
+      async (result, status) => {
+        console.log("📍 Directions result:", { status, result });
+        
         if (status === "OK" && result) {
-          setDirectionsResponse(result);
           const leg = result.routes[0].legs[0];
-          setDistance(leg.distance?.text || null);
-          setDuration(leg.duration?.text || null);
+          const routeDistance = parseFloat(leg.distance?.text?.replace(/[^\d.]/g, "") || "0");
+          
+          console.log("Route calculated successfully:", {
+            distance: leg.distance?.text,
+            duration: leg.duration?.text,
+            routeDistance,
+            batteryRange,
+            exceedsRange: routeDistance > batteryRange,
+            comparison: `${routeDistance} > ${batteryRange} = ${routeDistance > batteryRange}`
+          });
+          
+          // Check if charging is needed
+          if (routeDistance > batteryRange && batteryRange > 0) {
+            console.log("🔋 CHARGING NEEDED - route exceeds battery range");
+            
+            // Need charging - find optimal charging station
+            const startCoords = parseLatLng(start) || (typeof origin === 'object' && 'lat' in origin ? origin : null);
+            let endCoords = parseLatLng(end) || (typeof destination === 'object' && 'lat' in destination ? destination : null);
+            
+            // If we don't have end coordinates but we have the route result, extract them from the route
+            if (!endCoords && result && result.routes[0] && result.routes[0].legs[0]) {
+              const endLocation = result.routes[0].legs[0].end_location;
+              endCoords = {
+                lat: endLocation.lat(),
+                lng: endLocation.lng()
+              };
+              console.log("📍 Extracted end coordinates from route:", endCoords);
+            }
+            
+            console.log("📍 Parsed coordinates:", { startCoords, endCoords });
+            
+            if (startCoords && endCoords) {
+              console.log("🔍 Finding charging stop for coordinates:", { startCoords, endCoords });
+              await findChargingStop(startCoords, endCoords);
+            } else {
+              console.log("❌ Could not parse coordinates for charging stop - showing direct route");
+              // Show direct route anyway
+              setDirectionsResponse(result);
+              setDistance(leg.distance?.text || null);
+              setDuration(leg.duration?.text || null);
+              setShowChargingRoute(false);
+              setAutoSelectedChargingStation(null);
+              setChargingRouteResponse(null);
+            }
+          } else {
+            console.log("✅ No charging needed - using direct route");
+            console.log("Reason:", {
+              routeDistanceLessOrEqualToBattery: routeDistance <= batteryRange,
+              batteryRangeIsZero: batteryRange <= 0
+            });
+            // No charging needed - use direct route
+            setDirectionsResponse(result);
+            setDistance(leg.distance?.text || null);
+            setDuration(leg.duration?.text || null);
+            setShowChargingRoute(false);
+            setAutoSelectedChargingStation(null);
+            setChargingRouteResponse(null);
+          }
         } else {
-          console.error("Directions request failed:", status);
+          console.error("Directions request failed:", status, result);
           setDirectionsResponse(null);
           setDistance(null);
           setDuration(null);
@@ -542,11 +726,6 @@ export default function MapWeb({
     }
   }, [map]);
 
-  // Calculate how much extra range is needed
-  const extraRangeNeeded = exceedsRange && distance
-    ? Math.max(0, parseFloat(distance.replace(/[^\d.]/g, "")) - batteryRange)
-    : 0;
-
   if (loadError)
     return <div>Failed to load Google Maps: {String(loadError)}</div>;
   if (!isLoaded || !initialCenter.current) {
@@ -655,6 +834,38 @@ export default function MapWeb({
           />
         )}
 
+        {/* Auto-selected charging station marker */}
+        {autoSelectedChargingStation && (
+          <Marker
+            position={{
+              lat: autoSelectedChargingStation.latitude,
+              lng: autoSelectedChargingStation.longitude,
+            }}
+            title={`Recommended: ${autoSelectedChargingStation.title}`}
+            icon={{
+              url: "https://maps.google.com/mapfiles/ms/icons/red-dot.png", // Red for selected charging station
+              scaledSize: new window.google.maps.Size(40, 40),
+            }}
+            onClick={() => {
+              console.log("🔴 Recommended charging station clicked:", autoSelectedChargingStation);
+              
+              // Set as selected station for info window
+              setSelectedStation(autoSelectedChargingStation);
+              
+              // Center map on the station
+              if (map) {
+                console.log("📍 Centering map on recommended station");
+                map.setCenter({
+                  lat: autoSelectedChargingStation.latitude,
+                  lng: autoSelectedChargingStation.longitude,
+                });
+                map.setZoom(16); // Zoom in to show details
+              }
+            }}
+            zIndex={1000} // Ensure it's above other markers
+          />
+        )}
+
         {/* Charging station markers - filtered by route proximity */}
         {(() => {
           const stationsToRender = filteredStations();
@@ -668,9 +879,10 @@ export default function MapWeb({
           }
           
           return stationsToRender.map((station: any) => {
-            // Check if this is the recommended charging station
-            const isRecommended = recommendedStation && 
-              station.id === recommendedStation.id;
+            // Don't show regular marker if this is the auto-selected station
+            if (autoSelectedChargingStation && station.id === autoSelectedChargingStation.id) {
+              return null;
+            }
             
             return (
               <Marker
@@ -678,18 +890,13 @@ export default function MapWeb({
                 position={{ lat: station.latitude, lng: station.longitude }}
                 title={station.title}
                 icon={{
-                  url: isRecommended 
-                    ? "https://maps.google.com/mapfiles/ms/icons/blue-dot.png" 
-                    : chargingIcon,
-                  scaledSize: new window.google.maps.Size(
-                    isRecommended ? 48 : 32, 
-                    isRecommended ? 48 : 32
-                  ),
+                  url: chargingIcon, // Back to original green charging icon
+                  scaledSize: new window.google.maps.Size(32, 32), // Back to original size
                 }}
                 onClick={() => setSelectedStation(station)}
               />
             );
-          });
+          }).filter(Boolean); // Remove null values
         })()}
 
         {/* Recommended charging station marker - always show even if not in filtered list */}
@@ -716,6 +923,22 @@ export default function MapWeb({
             onCloseClick={() => setSelectedStation(null)}
           >
             <div style={{ minWidth: 200 }}>
+              {/* Show if this is the recommended station */}
+              {autoSelectedChargingStation && selectedStation.id === autoSelectedChargingStation.id && (
+                <div style={{
+                  backgroundColor: "#fef2f2",
+                  border: "1px solid #fecaca",
+                  borderRadius: "4px",
+                  padding: "6px 8px",
+                  marginBottom: "8px",
+                  fontSize: "12px",
+                  fontWeight: "600",
+                  color: "#dc2626"
+                }}>
+                  ⭐ Recommended Charging Station
+                </div>
+              )}
+              
               <h4>{selectedStation.title}</h4>
               {selectedStation.address && <p>{selectedStation.address}</p>}
               {selectedStation.town && (
@@ -730,7 +953,24 @@ export default function MapWeb({
                 <p>Status: {selectedStation.statusType}</p>
               )}
               {selectedStation.numberOfPoints && (
-                <p>Points: {selectedStation.numberOfPoints}</p>
+                <p>Charging Points: {selectedStation.numberOfPoints}</p>
+              )}
+
+              {/* Show charging details if this is the recommended station */}
+              {autoSelectedChargingStation && selectedStation.id === autoSelectedChargingStation.id && (
+                <div style={{ 
+                  backgroundColor: "#f0fdf4", 
+                  border: "1px solid #bbf7d0", 
+                  borderRadius: "4px", 
+                  padding: "8px", 
+                  marginTop: "8px",
+                  fontSize: "12px"
+                }}>
+                  <div><strong>Max Power:</strong> {selectedStation.maxPowerKW}kW</div>
+                  <div><strong>Est. Charging Time:</strong> {selectedStation.estimatedChargingTimeMinutes} min</div>
+                  <div><strong>Distance from start:</strong> {selectedStation.distanceFromStart}km</div>
+                  <div><strong>Range at destination:</strong> {selectedStation.remainingRangeAtDestination}km</div>
+                </div>
               )}
 
               {selectedStation.connections &&
@@ -759,7 +999,7 @@ export default function MapWeb({
       </GoogleMap>
 
       {/* Route info card - Google Maps style */}
-      {distance && duration && (
+      {((distance && duration) || (chargingStopInfo && chargingStopInfo.needsCharging)) && (
         <div
           style={{
             position: "absolute",
@@ -772,7 +1012,8 @@ export default function MapWeb({
             border: "1px solid rgba(0,0,0,0.08)",
             fontFamily: "Roboto, Arial, sans-serif",
             fontSize: "14px",
-            minWidth: "200px",
+            minWidth: "250px",
+            maxWidth: "400px",
             zIndex: 1000,
           }}
         >
@@ -780,58 +1021,111 @@ export default function MapWeb({
             <div style={{
               width: "16px",
               height: "16px",
-              backgroundColor: "#4285f4",
+              backgroundColor: showChargingRoute ? "#ea4335" : "#4285f4",
               borderRadius: "50%",
               marginRight: "8px",
               flexShrink: 0
             }}></div>
-            <div style={{ color: "#202124", fontWeight: "500" }}>Route Details</div>
-          </div>
-          
-          <div style={{ display: "flex", alignItems: "center", marginBottom: "4px" }}>
-            <div style={{
-              width: "16px",
-              height: "16px",
-              marginRight: "8px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center"
-            }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="#5f6368">
-                <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/>
-                <path d="M7 12h2v5H7zm4-6h2v11h-2zm4 3h2v8h-2z"/>
-              </svg>
+            <div style={{ color: "#202124", fontWeight: "500" }}>
+              {showChargingRoute ? "Route with Charging" : "Route Details"}
             </div>
-            <span style={{ color: "#202124", fontWeight: "500" }}>{distance}</span>
-          </div>
-          
-          <div style={{ display: "flex", alignItems: "center" }}>
-            <div style={{
-              width: "16px",
-              height: "16px",
-              marginRight: "8px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center"
-            }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="#5f6368">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-              </svg>
-            </div>
-            <span style={{ color: "#5f6368" }}>{duration}</span>
           </div>
 
-          {exceedsRange && (
-            <div style={{
-              marginTop: "12px",
-              padding: "8px 12px",
-              backgroundColor: "#fef7e0",
-              border: "1px solid #fbbc04",
-              borderRadius: "4px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "8px"
-            }}>
+          {/* Charging route information */}
+          {showChargingRoute && chargingStopInfo?.routeDetails && (
+            <div style={{ marginBottom: "12px" }}>
+              <div style={{ marginBottom: "8px", fontSize: "13px", color: "#ea4335", fontWeight: "500" }}>
+                🔋 Charging Required
+              </div>
+              
+              {/* Leg 1: To charging station */}
+              <div style={{ marginBottom: "6px", fontSize: "12px" }}>
+                <span style={{ color: "#5f6368" }}>To charging station: </span>
+                <span style={{ color: "#202124", fontWeight: "500" }}>
+                  {chargingStopInfo.routeDetails.timeToStation} min • {distance}
+                </span>
+              </div>
+              
+              {/* Charging time */}
+              <div style={{ marginBottom: "6px", fontSize: "12px" }}>
+                <span style={{ color: "#5f6368" }}>Charging time: </span>
+                <span style={{ color: "#202124", fontWeight: "500" }}>
+                  {chargingStopInfo.routeDetails.chargingTime} min • {autoSelectedChargingStation?.maxPowerKW}kW
+                </span>
+              </div>
+              
+              {/* Leg 2: From charging station */}
+              <div style={{ marginBottom: "6px", fontSize: "12px" }}>
+                <span style={{ color: "#5f6368" }}>To destination: </span>
+                <span style={{ color: "#202124", fontWeight: "500" }}>
+                  {chargingStopInfo.routeDetails.timeFromStation} min • {chargingStopInfo.routeDetails.distanceToEnd}km
+                </span>
+              </div>
+              
+              {/* Total time */}
+              <div style={{ 
+                marginTop: "8px", 
+                paddingTop: "8px", 
+                borderTop: "1px solid #e5e7eb",
+                fontSize: "13px" 
+              }}>
+                <span style={{ color: "#5f6368" }}>Total time: </span>
+                <span style={{ color: "#202124", fontWeight: "600" }}>
+                  {chargingStopInfo.routeDetails.totalTravelTime} min
+                </span>
+                <span style={{ color: "#5f6368", fontSize: "11px", marginLeft: "4px" }}>
+                  ({chargingStopInfo.routeDetails.totalTravelTime - chargingStopInfo.routeDetails.originalTravelTime} min extra)
+                </span>
+              </div>
+              
+              {/* Range at destination */}
+              <div style={{ fontSize: "12px", marginTop: "4px" }}>
+                <span style={{ color: "#5f6368" }}>Range at destination: </span>
+                <span style={{ color: "#34a853", fontWeight: "500" }}>
+                  {chargingStopInfo.routeDetails.remainingRangeAtDestination}km
+                </span>
+              </div>
+              
+              {/* Station info */}
+              {autoSelectedChargingStation && (
+                <div style={{ 
+                  marginTop: "8px", 
+                  padding: "8px", 
+                  backgroundColor: "#f8f9fa", 
+                  borderRadius: "4px",
+                  fontSize: "11px"
+                }}>
+                  <div style={{ fontWeight: "500", color: "#202124" }}>
+                    📍 {autoSelectedChargingStation.title}
+                  </div>
+                  <div style={{ color: "#5f6368", marginTop: "2px" }}>
+                    {autoSelectedChargingStation.numberOfPoints} sockets • {autoSelectedChargingStation.operator}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Regular route information */}
+          {!showChargingRoute && distance && duration && (
+            <>
+              <div style={{ display: "flex", alignItems: "center", marginBottom: "4px" }}>
+                <div style={{
+                  width: "16px",
+                  height: "16px",
+                  marginRight: "8px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center"
+                }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="#5f6368">
+                    <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/>
+                    <path d="M7 12h2v5H7zm4-6h2v11h-2zm4 3h2v8h-2z"/>
+                  </svg>
+                </div>
+                <span style={{ color: "#202124", fontWeight: "500" }}>{distance}</span>
+              </div>
+              
               <div style={{ display: "flex", alignItems: "center" }}>
                 <div style={{
                   width: "16px",
@@ -841,166 +1135,59 @@ export default function MapWeb({
                   alignItems: "center",
                   justifyContent: "center"
                 }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="#ea4335">
-                    <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="#5f6368">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
                   </svg>
                 </div>
-                <span style={{ color: "#ea4335", fontSize: "12px", fontWeight: "500" }}>
-                  Route exceeds battery range ({batteryRange} km)
-                </span>
+                <span style={{ color: "#5f6368" }}>{duration}</span>
               </div>
-              
-              {isLoadingRecommendation && (
-                <div style={{ display: "flex", alignItems: "center", fontSize: "12px", color: "#5f6368" }}>
-                  <div style={{
-                    width: "12px",
-                    height: "12px",
-                    border: "2px solid #5f6368",
-                    borderTop: "2px solid transparent",
-                    borderRadius: "50%",
-                    marginRight: "8px",
-                    animation: "spin 1s linear infinite"
-                  }}></div>
-                  Finding charging station...
-                </div>
-              )}
-              
-              {recommendedStation && !isLoadingRecommendation && (
-                <div 
-                  style={{
-                    backgroundColor: "#e8f0fe",
-                    border: "1px solid #4285f4",
-                    borderRadius: "4px",
-                    padding: "8px",
-                    fontSize: "12px",
-                    cursor: "pointer",
-                    transition: "background-color 0.2s"
-                  }}
-                  onClick={() => handleRecommendedStationClick(recommendedStation)}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#d2e3fc"}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#e8f0fe"}
-                >
-                  <div style={{ display: "flex", alignItems: "center", marginBottom: "4px" }}>
-                    <div style={{
-                      width: "12px",
-                      height: "12px",
-                      backgroundColor: "#4285f4",
-                      borderRadius: "50%",
-                      marginRight: "6px"
-                    }}></div>
-                    <span style={{ color: "#1a73e8", fontWeight: "500" }}>
-                      Recommended Charging Stop
-                    </span>
-                  </div>
-                  <div style={{ color: "#5f6368", marginLeft: "18px", fontWeight: "500" }}>
-                    {recommendedStation.title}
-                    {recommendedStation.town && `, ${recommendedStation.town}`}
-                  </div>
-                  {recommendedStation.maxPowerKW && (
-                    <div style={{ color: "#5f6368", marginLeft: "18px", fontSize: "11px" }}>
-                      Up to {recommendedStation.maxPowerKW} kW
-                    </div>
-                  )}
-                  <div style={{ fontSize: "10px", color: "#1a73e8", marginLeft: "18px", marginTop: "4px" }}>
-                    Click to view on map
-                  </div>
-                </div>
-              )}
-              
-              {!recommendedStation && !isLoadingRecommendation && (
-                <div style={{ fontSize: "12px", color: "#ea4335" }}>
-                  No suitable charging stations found within range
-                </div>
-              )}
+            </>
+          )}
+
+          {/* Loading indicator */}
+          {loadingChargingStop && (
+            <div style={{
+              marginTop: "12px",
+              padding: "8px 12px",
+              backgroundColor: "#f3f4f6",
+              border: "1px solid #d1d5db",
+              borderRadius: "4px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px"
+            }}>
+              <div style={{
+                width: "16px",
+                height: "16px",
+                marginRight: "8px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}>
+                <div style={{
+                  width: "12px",
+                  height: "12px",
+                  border: "2px solid #d1d5db",
+                  borderTop: "2px solid #4285f4",
+                  borderRadius: "50%",
+                  animation: "spin 1s linear infinite"
+                }}></div>
+              </div>
+              <span style={{ color: "#4285f4", fontSize: "12px", fontWeight: "500" }}>
+                Finding optimal charging station...
+              </span>
             </div>
           )}
         </div>
       )}
 
-      {/* Detailed Trip Information with Charging */}
-      {recommendedStation && exceedsRange && (
-        <div
-          style={{
-            position: "absolute",
-            top: 20,
-            right: 20,
-            background: "#fff",
-            padding: "16px 20px",
-            borderRadius: "8px",
-            boxShadow: "0 2px 10px rgba(0,0,0,0.15)",
-            border: "1px solid rgba(0,0,0,0.08)",
-            fontFamily: "Roboto, Arial, sans-serif",
-            fontSize: "14px",
-            minWidth: "280px",
-            maxWidth: "320px",
-            zIndex: 1000,
-          }}
-        >
-          <div style={{ marginBottom: "12px", display: "flex", alignItems: "center" }}>
-            <div style={{
-              width: "16px",
-              height: "16px",
-              backgroundColor: "#4285f4",
-              borderRadius: "50%",
-              marginRight: "8px",
-              flexShrink: 0
-            }}></div>
-            <div style={{ color: "#202124", fontWeight: "500" }}>Trip with Charging</div>
-          </div>
-          
-          {/* Trip to Charging Station */}
-          <div style={{ marginBottom: "12px", paddingBottom: "8px", borderBottom: "1px solid #e8eaed" }}>
-            <div style={{ color: "#1a73e8", fontWeight: "500", fontSize: "12px", marginBottom: "4px" }}>
-              📍 To Charging Station
-            </div>
-            <div style={{ color: "#202124", fontSize: "13px" }}>
-              {recommendedStation.distanceFromStart}km • {Math.round((recommendedStation.distanceFromStart / 80) * 60)} mins
-            </div>
-            <div style={{ color: "#5f6368", fontSize: "11px" }}>
-              Range remaining: {(batteryRange - recommendedStation.distanceFromStart).toFixed(1)}km
-            </div>
-          </div>
-
-          {/* Charging Time */}
-          <div style={{ marginBottom: "12px", paddingBottom: "8px", borderBottom: "1px solid #e8eaed" }}>
-            <div style={{ color: "#f9ab00", fontWeight: "500", fontSize: "12px", marginBottom: "4px" }}>
-              ⚡ Charging at {recommendedStation.title}
-            </div>
-            <div style={{ color: "#202124", fontSize: "13px" }}>
-              {recommendedStation.estimatedChargingTimeMinutes} minutes
-            </div>
-            <div style={{ color: "#5f6368", fontSize: "11px" }}>
-              {recommendedStation.maxPowerKW}kW charging
-            </div>
-          </div>
-
-          {/* Trip to Destination */}
-          <div style={{ marginBottom: "12px", paddingBottom: "8px", borderBottom: "1px solid #e8eaed" }}>
-            <div style={{ color: "#1a73e8", fontWeight: "500", fontSize: "12px", marginBottom: "4px" }}>
-              🏁 To Destination
-            </div>
-            <div style={{ color: "#202124", fontSize: "13px" }}>
-              {recommendedStation.distanceToEnd}km • {Math.round((recommendedStation.distanceToEnd / 80) * 60)} mins
-            </div>
-            <div style={{ color: "#5f6368", fontSize: "11px" }}>
-              Range remaining: {recommendedStation.remainingRangeAtDestination}km
-            </div>
-          </div>
-
-          {/* Total Trip Summary */}
-          <div style={{ backgroundColor: "#f8f9fa", padding: "8px", borderRadius: "4px" }}>
-            <div style={{ color: "#202124", fontWeight: "500", fontSize: "12px", marginBottom: "2px" }}>
-              Total Trip Summary
-            </div>
-            <div style={{ color: "#202124", fontSize: "13px" }}>
-              {recommendedStation.totalDistanceViaStation}km • {Math.round(((recommendedStation.distanceFromStart + recommendedStation.distanceToEnd) / 80) * 60 + recommendedStation.estimatedChargingTimeMinutes)} mins
-            </div>
-            <div style={{ color: "#5f6368", fontSize: "11px" }}>
-              +{recommendedStation.detourDistance}km detour • +{recommendedStation.estimatedChargingTimeMinutes} mins charging
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Add CSS for loading spinner */}
+      <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
 
       {/* Backend Error Popup */}
       {backendError && (
