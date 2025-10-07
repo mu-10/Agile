@@ -248,7 +248,7 @@ app.post("/api/find-charging-stop", async (req, res) => {
 
     // Get stations from database or API in a corridor around the route
     if (USE_DATABASE && db) {
-      const bufferDegrees = 0.3; // Roughly 30km buffer
+      const bufferDegrees = 0.3; // 30km buffer as requested
       const north = Math.max(start.lat, end.lat) + bufferDegrees;
       const south = Math.min(start.lat, end.lat) - bufferDegrees;
       const east = Math.max(start.lng, end.lng) + bufferDegrees;
@@ -257,7 +257,7 @@ app.post("/api/find-charging-stop", async (req, res) => {
       stations = db.getStationsInBounds(north, south, east, west, 2000);
     } else {
       // Fallback to API
-      const bufferDegrees = 0.3;
+      const bufferDegrees = 0.3; // 30km buffer to match database search
       const north = Math.max(start.lat, end.lat) + bufferDegrees;
       const south = Math.min(start.lat, end.lat) - bufferDegrees;
       const east = Math.max(start.lng, end.lng) + bufferDegrees;
@@ -299,12 +299,11 @@ app.post("/api/find-charging-stop", async (req, res) => {
       }
     }
 
-    // Filter and score charging stations
-    console.log(`🔍 Filtering ${stations.length} stations. Trip: ${totalDistance}km, Range: ${currentRange}km, Max before charging: ${maxDistanceBeforeCharging}km`);
-    
     let filteredCount = 0;
     let reachableCount = 0;
     let destinationCount = 0;
+    
+    console.log(`Found ${stations.length} stations in search area`);
     
     const viableStations = stations
       .filter(station => {
@@ -322,8 +321,7 @@ app.post("/api/find-charging-stop", async (req, res) => {
         // Check if station is reachable with current battery
         const distanceFromStart = calculateDistance(start.lat, start.lng, station.latitude, station.longitude);
         
-        // Use a more reasonable approach - stations must be within safe range
-        // but allow some flexibility for longer trips where we need more options
+        // Keep 80% safety margin for reachability
         if (distanceFromStart > maxDistanceBeforeCharging) {
           return false;
         }
@@ -332,16 +330,13 @@ app.post("/api/find-charging-stop", async (req, res) => {
         
         // Check if station can complete the journey OR get us significantly closer
         const distanceToEnd = calculateDistance(station.latitude, station.longitude, end.lat, end.lng);
-        const remainingDistance = totalDistance - distanceFromStart;
         
-        // For long trips, accept stations that either:
-        // 1. Can reach the destination directly, OR
-        // 2. Reduce remaining distance by at least 50% AND are within next charging range
-        const canReachDestination = distanceToEnd <= parseFloat(batteryRange) - 10;
-        const makesSignificantProgress = remainingDistance > parseFloat(batteryRange) && 
-                                       distanceToEnd < remainingDistance * 0.8;
+        // More lenient destination check - allow any station that can reach destination
+        // or reduces remaining distance meaningfully
+        const canReachDestination = distanceToEnd <= parseFloat(batteryRange) - 5; // Only 5km safety buffer
+        const isUsefulForLongTrip = distanceToEnd < totalDistance * 0.9; // Any reduction is helpful
         
-        if (!canReachDestination && !makesSignificantProgress) {
+        if (!canReachDestination && !isUsefulForLongTrip) {
           return false;
         }
         
@@ -369,11 +364,11 @@ app.post("/api/find-charging-stop", async (req, res) => {
         const chargingTimeMinutes = chargingTimeHours * 60;
         
         // Calculate efficiency score (lower is better)
-        // Balance route proximity with other practical factors
+        // Heavily prioritize minimal detour distance for route efficiency
         const efficiencyScore = 
-          (detourDistance * 2) +                                    // Detour penalty 
+          (detourDistance * 10) +                                   // Heavy detour penalty - route efficiency is priority
           (distanceFromRoute * 3) +                                 // Distance from route penalty (important but not overwhelming)
-          (chargingTimeMinutes * 0.4) +                            // Charging time penalty
+          (chargingTimeMinutes * 0.2) +                            // Reduced charging time penalty (secondary to route efficiency)
           ((station.numberOfPoints || 1) * -8) +                  // Bonus for more charging points
           (maxPowerKW > 100 ? -15 : 0) +                          // Bonus for fast charging
           (maxPowerKW > 200 ? -10 : 0) +                          // Extra bonus for ultra-fast charging
@@ -392,8 +387,24 @@ app.post("/api/find-charging-stop", async (req, res) => {
           remainingRangeAtDestination: Math.round((parseFloat(batteryRange) - distanceToEnd) * 10) / 10
         };
       })
-      .sort((a, b) => b.efficiencyScore - a.efficiencyScore)
+      .sort((a, b) => a.efficiencyScore - b.efficiencyScore) // Lower score is better (ascending order)
       .slice(0, 5); // Top 5 options
+
+    // Debug: Show the top stations and their scores
+    console.log('\n=== TOP 5 CHARGING STATION OPTIONS ===');
+    scoredStations.forEach((station, index) => {
+      console.log(`${index + 1}. ${station.title} (${station.town})`);
+      console.log(`   Detour: ${station.detourDistance}km`);
+      console.log(`   Efficiency Score: ${station.efficiencyScore}`);
+      const detourPenalty = (station.detourDistance * 10).toFixed(1);
+      const routePenalty = (station.distanceFromRoute * 3).toFixed(1);
+      const chargingPenalty = (station.estimatedChargingTimeMinutes * 0.2).toFixed(1);
+      console.log(`   Breakdown: Detour(${detourPenalty}) + Route(${routePenalty}) + Charging(${chargingPenalty})`);
+      console.log('');
+    });
+
+    console.log(`🎯 SELECTED: ${scoredStations[0].title} with efficiency score ${scoredStations[0].efficiencyScore}`);
+    console.log('===========================================\n');
 
     if (scoredStations.length === 0) {
       return res.json({
@@ -416,7 +427,7 @@ app.post("/api/find-charging-stop", async (req, res) => {
     res.json({
       needsCharging: true,
       chargingStation: bestStation,
-      alternatives: viableStations.slice(1),
+      alternatives: scoredStations.slice(1),
       routeDetails: {
         originalDistance: Math.round(totalDistance * 10) / 10,
         totalDistanceViaStation: bestStation.totalDistanceViaStation,
