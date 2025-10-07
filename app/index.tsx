@@ -1,12 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import {
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
+    Platform,
+    Pressable,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
 } from "react-native";
 import MapWeb from "../components/Map.web";
 
@@ -122,6 +122,10 @@ export default function Index() {
     if (!currentLocation) return;
     const loc = currentLocation;
     setStartCoords(`${loc.lat},${loc.lng}`);
+    
+    // Hide autocomplete dropdown when using current location
+    setShowStartPreds(false);
+    setStartPredictions([]);
 
     try {
       const res = await fetch(
