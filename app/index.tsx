@@ -267,7 +267,7 @@ export default function Index() {
   ];
 
   return (
-    <View style={{ flex: 1, backgroundColor: darkMode ? "#18181b" : "#fff" }}>
+    <View style={{ flex: 1, backgroundColor: darkMode ? "#18181b" : "#f3f4f6" }}>
       <View style={[
         styles.toolbar,
         darkMode && { backgroundColor: "#27272a" }
