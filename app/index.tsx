@@ -3,12 +3,14 @@ import { useEffect, useRef, useState } from "react";
 import {
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
 import MapWeb from "../components/Map.web";
+import vehiclesData from "../data/vehicles.json";
 import { useDarkMode } from "./useDarkMode";
 
 export default function Index() {
@@ -20,6 +22,12 @@ export default function Index() {
   const [batteryCapacity, setBatteryCapacity] = useState<string>("");
   const [rangeError, setRangeError] = useState<string>("");
   const [capacityError, setCapacityError] = useState<string>("");
+
+  // Vehicle selection states
+  const [vehicleSearch, setVehicleSearch] = useState<string>("");
+  const [selectedVehicle, setSelectedVehicle] = useState<any>(null);
+  const [vehiclePredictions, setVehiclePredictions] = useState<any[]>([]);
+  const [showVehiclePreds, setShowVehiclePreds] = useState<boolean>(false);
 
   const darkMode = useDarkMode();
 
@@ -68,10 +76,10 @@ export default function Index() {
     const numericValue = text.replace(/[^0-9]/g, "");
     if (batteryCapacity && Number(numericValue) > Number(batteryCapacity)) {
       setBatteryRange(batteryCapacity);
-      setRangeError("Range cannot exceed capacity");
+      setRangeError("Current range cannot exceed max range");
     } else {
       setBatteryRange(numericValue);
-      setRangeError(numericValue === "" ? "Range must be a number" : "");
+      setRangeError(numericValue === "" ? "Current range must be a number" : "");
     }
   };
 
@@ -80,9 +88,9 @@ export default function Index() {
     const numericValue = text.replace(/[^0-9]/g, "");
     setBatteryCapacity(numericValue);
     if (numericValue === "") {
-      setCapacityError("Capacity must be a number");
+      setCapacityError("Max range must be a number");
     } else if (Number(numericValue) > 1000) {
-      setCapacityError("Please enter a valid capacity.");
+      setCapacityError("Please enter a valid max range.");
     } else {
       setCapacityError("");
     }
@@ -92,13 +100,13 @@ export default function Index() {
   const onPlan = () => {
     let valid = true;
     if (!batteryRange || isNaN(Number(batteryRange))) {
-      setRangeError("Please enter a valid number for battery range");
+      setRangeError("Please enter a valid number for current range");
       valid = false;
     } else {
       setRangeError("");
     }
     if (!batteryCapacity || isNaN(Number(batteryCapacity)) || Number(batteryCapacity) > 1000) {
-      setCapacityError(!batteryCapacity || isNaN(Number(batteryCapacity)) ? "Please enter a valid number for capacity" : "Please enter a valid capacity.");
+      setCapacityError(!batteryCapacity || isNaN(Number(batteryCapacity)) ? "Please enter a valid number for max range" : "Please enter a valid max range.");
       valid = false;
     } else {
       setCapacityError("");
@@ -111,13 +119,6 @@ export default function Index() {
     setPlannedOriginPlaceId(originPlaceId);
     setPlannedDestinationPlaceId(destinationPlaceId);
     setPlannedRange(Number(batteryRange));
-
-    console.log("Planned route:", {
-      start: startCoords || startInput,
-      end,
-      batteryRange,
-      batteryCapacity,
-    });
   };
 
   // Fill input with current location on button press
@@ -139,12 +140,15 @@ export default function Index() {
         // Always set the actual address from reverse geocoding
         setStartInput(json.results[0].formatted_address);
       } else {
-        // Fallback to coordinates if no address found
-        setStartInput(`${loc.lat},${loc.lng}`);
+        // Try to get a simpler address format if the first one fails
+        const simpleAddress = `${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}`;
+        setStartInput(simpleAddress);
       }
     } catch (err) {
       console.error("Reverse geocoding failed:", err);
-      setStartInput(`${loc.lat},${loc.lng}`);
+      // Use a more readable format for coordinates as fallback
+      const simpleAddress = `${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}`;
+      setStartInput(simpleAddress);
     }
   };
 
@@ -204,6 +208,44 @@ export default function Index() {
       setShowEndPreds(false);
       setEndPredictions([]);
     }
+  };
+
+  // Vehicle search functionality
+  const searchVehicles = (searchText: string) => {
+    if (!searchText || searchText.length < 2) {
+      setVehiclePredictions([]);
+      return;
+    }
+    
+    const filtered = vehiclesData.filter((vehicle: any) => {
+      const fullName = `${vehicle.brand} ${vehicle.model}`;
+      return fullName.toLowerCase().includes(searchText.toLowerCase());
+    }).slice(0, 10); // Limit to 10 results
+    
+    setVehiclePredictions(filtered);
+  };
+
+  const handleVehicleSearchChange = (text: string) => {
+    setVehicleSearch(text);
+    setShowVehiclePreds(true);
+    searchVehicles(text);
+    
+    // If text is cleared, also clear the selected vehicle
+    if (!text) {
+      setSelectedVehicle(null);
+    }
+  };
+
+  const selectVehicle = (vehicle: any) => {
+    const vehicleName = `${vehicle.brand} ${vehicle.model}`;
+    setVehicleSearch(vehicleName);
+    setSelectedVehicle(vehicle);
+    setShowVehiclePreds(false);
+    setVehiclePredictions([]);
+    
+    // Auto-fill the max range from vehicle data
+    setBatteryCapacity(vehicle.range_km.toString());
+    setCapacityError(""); // Clear any existing capacity error
   };
 
   return (
@@ -290,13 +332,13 @@ export default function Index() {
 
         <View style={styles.divider} />
 
-        {/* Battery range */}
+        {/* Current battery range */}
         <TextInput
           style={[
             styles.input,
             darkMode && { backgroundColor: "#27272a", color: "#d1d5db" },
           ]}
-          placeholder="Range km"
+          placeholder="Current range (km left)"
           placeholderTextColor={darkMode ? "#6b7280" : "#9ca3af"}
           value={batteryRange}
           keyboardType="numeric"
@@ -305,13 +347,29 @@ export default function Index() {
 
         <View style={styles.divider} />
 
-        {/* Battery capacity */}
+        {/* Vehicle selector */}
+        <TextInput
+          style={styles.input}
+          placeholder="Select vehicle model (optional)"
+          placeholderTextColor="#9ca3af"
+          value={vehicleSearch}
+          onChangeText={handleVehicleSearchChange}
+          onFocus={() => setShowVehiclePreds(true)}
+          onBlur={() => {
+            // Delay hiding to allow for selection
+            setTimeout(() => setShowVehiclePreds(false), 150);
+          }}
+        />
+
+        <View style={styles.divider} />
+
+        {/* Max range */}
         <TextInput
           style={[
             styles.input,
             darkMode && { backgroundColor: "#27272a", color: "#d1d5db" },
           ]}
-          placeholder="Capacity km"
+          placeholder="Max range (km when full)"
           placeholderTextColor={darkMode ? "#6b7280" : "#9ca3af"}
           value={batteryCapacity}
           keyboardType="numeric"
@@ -398,6 +456,28 @@ export default function Index() {
         </View>
       ) : null}
 
+      {/* Vehicle predictions dropdown */}
+      {showVehiclePreds && vehiclePredictions.length > 0 && (
+        <View style={styles.vehicleDropdownContainer}>
+          <ScrollView style={styles.vehicleDropdown} showsVerticalScrollIndicator={false}>
+            {vehiclePredictions.map((vehicle: any, index: number) => (
+              <Pressable
+                key={index}
+                style={styles.vehiclePredictionItem}
+                onPress={() => selectVehicle(vehicle)}
+              >
+                <Text style={styles.predictionText}>
+                  {vehicle.brand} {vehicle.model}
+                </Text>
+                <Text style={styles.predictionSubtext}>
+                  {vehicle.range_km} km max range • {vehicle.battery_capacity_kWh} kWh
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
   {/* Always show a solid grey divider between input fields and map */}
   <View style={{ width: "100%", backgroundColor: "#f3f4f6", height: 8 }} />
       <View style={{ flex: 1 }}>
@@ -410,6 +490,7 @@ export default function Index() {
           batteryCapacity={Number(batteryCapacity) || 0}
           onLocationChange={(loc) => setCurrentLocation(loc)}
           onMapsReady={() => setIsMapsReady(true)}
+          showRecommendedLocations={!!(plannedStart && plannedEnd)} // only show when a route is planned
         />
       </View>
     </View>
@@ -425,9 +506,7 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     paddingHorizontal: 14,
     paddingVertical: 6,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
+    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.08)",
     elevation: 6,
   },
   icon: { marginRight: 6, marginLeft: 2 },
@@ -453,9 +532,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 30,
     backgroundColor: "#22c55e",
-    shadowColor: "#22c55e",
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
+    boxShadow: "0 6px 10px rgba(34, 197, 94, 0.25)",
     elevation: 6,
   },
   buttonPressed: { backgroundColor: "#16a34a" },
@@ -479,9 +556,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 4,
     marginBottom: 8,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
+    boxShadow: "0 4px 10px rgba(0, 0, 0, 0.08)",
     elevation: 6,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "#e5e7eb",
@@ -495,5 +570,63 @@ const styles = StyleSheet.create({
   suggestionText: {
     fontSize: 14,
     color: "#111827",
+  },
+  inputContainer: {
+    position: "relative",
+    flex: 1,
+    zIndex: 10000,
+  },
+  predictionsContainer: {
+    position: "absolute",
+    top: "100%",
+    left: 0,
+    right: 0,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    marginTop: 2,
+    maxHeight: 200,
+    boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)",
+    elevation: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "#e5e7eb",
+    zIndex: 10001,
+  },
+  predictionItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#f3f4f6",
+  },
+  predictionText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#111827",
+    marginBottom: 2,
+  },
+  predictionSubtext: {
+    fontSize: 12,
+    color: "#6b7280",
+  },
+  vehicleDropdownContainer: {
+    position: "absolute",
+    left: 12,
+    right: 12,
+    top: 70, // Position below the toolbar
+    zIndex: 99999,
+  },
+  vehicleDropdown: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    maxHeight: 200,
+    boxShadow: "0 6px 12px rgba(0, 0, 0, 0.15)",
+    elevation: 15,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "#e5e7eb",
+  },
+  vehiclePredictionItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#f3f4f6",
   },
 });

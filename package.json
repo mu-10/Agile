@@ -10,8 +10,8 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "test": "jest",
-    "migrate": "node migrate.js",
-    "db:migrate": "node migrate.js",
+    "migrate": "node services/migrationService.js",
+    "db:migrate": "node services/migrationService.js",
     "server": "set USE_DATABASE=true&& node server.js",
     "server:api": "set USE_DATABASE=false&& node server.js",
     "server:db": "set USE_DATABASE=true&& node server.js"
@@ -39,6 +39,7 @@
     "expo-system-ui": "~6.0.7",
     "expo-web-browser": "~15.0.7",
     "express": "^5.1.0",
+    "http-proxy-middleware": "^3.0.5",
     "node-fetch": "^2.7.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",

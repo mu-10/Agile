@@ -14,7 +14,7 @@ A project made for course DAT257 Agile software project management.
 2. Start the backend:
 
    ```bash
-   # Start backend with database is there is data, otherwise API mode is used
+   # Start backend
    npm run server
    ```
 
@@ -31,37 +31,34 @@ In the output, you'll find options to open the app in a
 - [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
 - [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
 
-## Database
+## Database Setup
 
-### Database Setup
+### Initial Setup
 
-The application uses SQLite to store charging station data locally for better performance and reliability.
-
-**Update the database:**
+1. Populate the database:
 ```bash
-# Migrate data from Open Charge Map API to local database
+# Downloads and stores charging station data from Open Charge Map API
 npm run migrate
 ```
 
-### Database Schema
+## Functionality
 
-```sql
-CREATE TABLE charging_stations (
-  id INTEGER PRIMARY KEY,
-  title TEXT,
-  address TEXT,
-  town TEXT,
-  state TEXT,
-  latitude REAL NOT NULL,
-  longitude REAL NOT NULL,
-  number_of_points INTEGER,
-  status_type TEXT,
-  operator TEXT,
-  connections TEXT, -- JSON
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-```
+### Automatic charging station recommending
+
+The charging station recommendation system uses a multi-step algorithm to find optimal charging locations:
+
+- **Route Analysis**: Calculates total trip distance using Google Maps Directions API for accurate road distances.
+
+- **Strategic Charging Point**: Determines optimal charging waypoint at 75% of battery range (25% remaining), maximizing driving efficiency.
+
+- **Station Filtering**: Uses straight-line calculations to quickly identify stations within 30km of the target waypoint.
+
+- **Precise Calculations**: Applies Google Maps API to calculate exact road distances from start to station and station to destination.
+
+- **Intelligent Scoring**: Ranks stations based on detour distance, battery optimization, charging speed, and total trip time.
+
+- **Optimal Selection**: Chooses the station with the highest efficiency score, minimizing detour while ensuring adequate battery reserves for journey completion.
+
 
 ## Testing
 
@@ -79,3 +76,25 @@ npm test
 - **Error Handling**: Tests component behavior with missing props and API failures
 
 Tests use Jest with React Testing Library and comprehensive mocks for Google Maps API.
+
+
+### Database Schema
+
+```sql
+CREATE TABLE charging_stations (
+  id INTEGER PRIMARY KEY,
+  title TEXT,
+  address TEXT,
+  town TEXT,
+  state TEXT,
+  latitude REAL NOT NULL,
+  longitude REAL NOT NULL,
+  number_of_points INTEGER,
+  status_type TEXT,
+  operator TEXT,
+  usage_cost TEXT,
+  connections TEXT, -- JSON
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
