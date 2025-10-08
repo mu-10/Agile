@@ -148,7 +148,7 @@ export default function Index() {
       console.error("Reverse geocoding failed:", err);
       // Use a more readable format for coordinates as fallback
       const simpleAddress = `${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}`;
-      setStartInput(simpleAddress);
+        setStartInput(simpleAddress);
     }
   };
 
@@ -349,9 +349,9 @@ export default function Index() {
 
         {/* Vehicle selector */}
         <TextInput
-          style={styles.input}
+          style={[styles.input, darkMode && { backgroundColor: "#27272a", color: "#d1d5db" }]} // <-- fix for dark mode text
           placeholder="Select vehicle model (optional)"
-          placeholderTextColor="#9ca3af"
+          placeholderTextColor={darkMode ? "#6b7280" : "#9ca3af"}
           value={vehicleSearch}
           onChangeText={handleVehicleSearchChange}
           onFocus={() => setShowVehiclePreds(true)}
@@ -458,18 +458,18 @@ export default function Index() {
 
       {/* Vehicle predictions dropdown */}
       {showVehiclePreds && vehiclePredictions.length > 0 && (
-        <View style={styles.vehicleDropdownContainer}>
-          <ScrollView style={styles.vehicleDropdown} showsVerticalScrollIndicator={false}>
+        <View style={[styles.vehicleDropdownContainer, darkMode && { backgroundColor: "#18181b" }]}> 
+          <ScrollView style={[styles.vehicleDropdown, darkMode && { backgroundColor: "#27272a", borderColor: "#444" }]} showsVerticalScrollIndicator={false}>
             {vehiclePredictions.map((vehicle: any, index: number) => (
               <Pressable
                 key={index}
-                style={styles.vehiclePredictionItem}
+                style={[styles.vehiclePredictionItem, darkMode && { backgroundColor: "#27272a" }]}
                 onPress={() => selectVehicle(vehicle)}
               >
-                <Text style={styles.predictionText}>
+                <Text style={[styles.predictionText, darkMode && { color: "#d1d5db" }]}>
                   {vehicle.brand} {vehicle.model}
                 </Text>
-                <Text style={styles.predictionSubtext}>
+                <Text style={[styles.predictionSubtext, darkMode && { color: "#a1a1aa" }]}>
                   {vehicle.range_km} km max range • {vehicle.battery_capacity_kWh} kWh
                 </Text>
               </Pressable>
