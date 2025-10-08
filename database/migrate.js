@@ -1,7 +1,7 @@
 //Used to populate database by fetching charging stations using open charge map API
 
 require('dotenv').config({ quiet: true });
-const ChargingStationDB = require('./database');
+const ChargingStationDB = require('../services/databaseService');
 
 async function runMigration() {
   console.log('Starting charging station database migration...');

@@ -1,8 +1,8 @@
 require('dotenv').config({ quiet: true });
 const express = require("express");
 const cors = require("cors");
-const ChargingStationDB = require('./database/database');
-const { findRecommendedChargingStation, calculateDistance } = require('./recommended-charging');
+const ChargingStationDB = require('./services/databaseService');
+const { findRecommendedChargingStation, calculateDistance } = require('./services/chargingRecommendationService');
 const app = express();
 
 app.use(cors());
@@ -221,7 +221,6 @@ const gracefulShutdown = (signal) => {
     process.exit(0);
   });
   
-  // Also handle if server.close() doesn't work
   setTimeout(() => {
     console.log('Server close timeout, forcing exit');
     process.exit(1);
