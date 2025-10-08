@@ -133,6 +133,7 @@ export default function MapWeb({
       setChargingStopInfo(data);
       
       if (data.needsCharging && data.chargingStation) {
+        console.log("🔍 Charging station data:", data.chargingStation);
         setAutoSelectedChargingStation(data.chargingStation);
         setAlternativeStations(data.alternatives || []);
         setShowChargingRoute(true);
@@ -522,17 +523,28 @@ export default function MapWeb({
             console.log("🔋 CHARGING NEEDED - route exceeds battery range");
             
             // Need charging - find optimal charging station
-            const startCoords = parseLatLng(start) || (typeof origin === 'object' && 'lat' in origin ? origin : null);
+            let startCoords = parseLatLng(start) || (typeof origin === 'object' && 'lat' in origin ? origin : null);
             let endCoords = parseLatLng(end) || (typeof destination === 'object' && 'lat' in destination ? destination : null);
             
-            // If we don't have end coordinates but we have the route result, extract them from the route
-            if (!endCoords && result && result.routes[0] && result.routes[0].legs[0]) {
-              const endLocation = result.routes[0].legs[0].end_location;
-              endCoords = {
-                lat: endLocation.lat(),
-                lng: endLocation.lng()
-              };
-              console.log("📍 Extracted end coordinates from route:", endCoords);
+            // If we don't have coordinates, extract them from the route result (for manual addresses)
+            if (result && result.routes[0] && result.routes[0].legs[0]) {
+              if (!startCoords) {
+                const startLocation = result.routes[0].legs[0].start_location;
+                startCoords = {
+                  lat: startLocation.lat(),
+                  lng: startLocation.lng()
+                };
+                console.log("📍 Extracted start coordinates from route:", startCoords);
+              }
+              
+              if (!endCoords) {
+                const endLocation = result.routes[0].legs[0].end_location;
+                endCoords = {
+                  lat: endLocation.lat(),
+                  lng: endLocation.lng()
+                };
+                console.log("📍 Extracted end coordinates from route:", endCoords);
+              }
             }
             
             console.log("📍 Parsed coordinates:", { startCoords, endCoords });
@@ -572,7 +584,7 @@ export default function MapWeb({
         }
       }
     );
-  }, [isLoaded, start, end, originPlaceId, destinationPlaceId, parseLatLng]);
+  }, [isLoaded, start, end, originPlaceId, destinationPlaceId, batteryRange, parseLatLng]);
 
   // Battery range check
   const exceedsRange =
@@ -1080,7 +1092,7 @@ export default function MapWeb({
                   color: "#ea4335", 
                   marginBottom: "4px" 
                 }}>
-                  Fastest route with charging • via {autoSelectedChargingStation?.title}
+                  Fastest route with charging • via {autoSelectedChargingStation?.title || autoSelectedChargingStation?.name || 'charging station'}
                 </div>
                 
                 <div style={{ 
