@@ -123,12 +123,7 @@ app.post("/api/find-charging-stop", async (req, res) => {
       const east = Math.max(start.lng, end.lng) + bufferDegrees;
       const west = Math.min(start.lng, end.lng) - bufferDegrees;
       
-      console.log(`🗺️ Route bounds: North: ${north}, South: ${south}, East: ${east}, West: ${west}`);
-      console.log(`🗺️ Start: ${start.lat}, ${start.lng} | End: ${end.lat}, ${end.lng}`);
-      
       stations = db.getStationsInBounds(north, south, east, west, 2000);
-      
-      console.log(`🔍 Found ${stations.length} stations in route bounds`);
       
       if (stations.length === 0) {
         return res.status(404).json({
@@ -183,6 +178,51 @@ app.post("/api/find-charging-stop", async (req, res) => {
     res.status(500).json({
       error: "Failed to find charging stop",
       message: "An unexpected error occurred while finding charging stations.",
+      details: err.message,
+    });
+  }
+});
+
+// Validate station reachability endpoint
+app.post("/api/validate-station-reachability", async (req, res) => {
+  try {
+    const { startLat, startLng, stationLat, stationLng, batteryRange } = req.body;
+
+    if (!startLat || !startLng || !stationLat || !stationLng || !batteryRange) {
+      return res.status(400).json({
+        error: "Missing required parameters",
+        message: "Please provide startLat, startLng, stationLat, stationLng, and batteryRange"
+      });
+    }
+
+    // Calculate actual route distance to the station
+    const distance = await calculateDistance(
+      startLat, 
+      startLng, 
+      stationLat, 
+      stationLng, 
+      process.env.EXPO_PUBLIC_MAPS_WEB_KEY
+    );
+
+    // Reserve 20% battery for safety margin (use 80% of battery range)
+    const usableBatteryRange = batteryRange * 0.8;
+
+    const reachable = distance <= usableBatteryRange;
+    
+    res.json({
+      reachable,
+      distance: distance.toFixed(1),
+      usableBatteryRange: usableBatteryRange.toFixed(1),
+      message: reachable 
+        ? `Station is reachable (${distance.toFixed(1)}km within ${usableBatteryRange.toFixed(1)}km range)`
+        : `Station may be unreachable (${distance.toFixed(1)}km exceeds ${usableBatteryRange.toFixed(1)}km usable range)`
+    });
+
+  } catch (err) {
+    console.error("Error validating station reachability:", err);
+    res.status(500).json({
+      error: "Failed to validate reachability",
+      message: "An unexpected error occurred while validating station reachability.",
       details: err.message,
     });
   }

@@ -53,7 +53,6 @@ export default function MapWeb({
   const [stations, setStations] = useState<any[]>([]);
   const [loadingStations, setLoadingStations] = useState(true);
   const [selectedStation, setSelectedStation] = useState<any | null>(null);
-  const [selectedChargingStation, setSelectedChargingStation] = useState<any | null>(null); // Manually selected for routing
   const [autoSelectedChargingStation, setAutoSelectedChargingStation] = useState<any | null>(null); // Auto-selected charging station
   const [chargingStopInfo, setChargingStopInfo] = useState<any | null>(null); // Charging stop route details
   const [loadingChargingStop, setLoadingChargingStop] = useState<boolean>(false);
@@ -215,6 +214,12 @@ export default function MapWeb({
 
       // Calculate route details if both routes are available
       if (routeToStation && routeFromStation) {
+        // Update the main direction response to show route to charging station
+        setDirectionsResponse(routeToStation);
+        
+        // Set the route from charging station for second leg display
+        setChargingRouteResponse(routeFromStation);
+        
         const legToStation = routeToStation.routes[0].legs[0];
         const legFromStation = routeFromStation.routes[0].legs[0];
         
@@ -233,7 +238,9 @@ export default function MapWeb({
           timeToStation: Math.round(timeToStation / 60),
           timeFromStation: Math.round(timeFromStation / 60),
           chargingTime: Math.round(chargingTime / 60),
-          originalDistance: legToStation.distance?.text || ''
+          originalDistance: legToStation.distance?.text || '',
+          distanceToEnd: legFromStation.distance?.text || '',
+          remainingRangeAtDestination: station.remainingRangeAtDestination || 'Unknown'
         };
 
         // Update chargingStopInfo with route details
@@ -250,6 +257,98 @@ export default function MapWeb({
       console.error("Error calculating charging route:", error);
     }
   }, [duration]);
+
+  const [stationReachability, setStationReachability] = useState<{[key: string]: {reachable: boolean, message: string}}>({});
+
+  // Function to check if a station is reachable within battery range
+  // TODO: This should be moved to backend service with proper route calculation
+  const checkStationReachability = useCallback(async (station: any, batteryRange: number) => {
+    if (!start) return { reachable: false, message: "No starting point set" };
+    
+    try {
+      // Parse start coordinates from string or extract from current route
+      let startCoords = parseLatLng(start);
+      
+      if (!startCoords && directionsResponse && directionsResponse.routes[0]) {
+        const startLocation = directionsResponse.routes[0].legs[0].start_location;
+        startCoords = { lat: startLocation.lat(), lng: startLocation.lng() };
+      }
+      
+      if (!startCoords) {
+        return { reachable: false, message: "Could not determine starting coordinates" };
+      }
+      
+      // Call backend to validate reachability with actual route calculation
+      const response = await fetch('http://localhost:3001/api/validate-station-reachability', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          startLat: startCoords.lat,
+          startLng: startCoords.lng,
+          stationLat: station.latitude,
+          stationLng: station.longitude,
+          batteryRange: batteryRange,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const result = {
+          reachable: data.reachable,
+          message: data.message || ""
+        };
+        
+        // Cache the result
+        setStationReachability(prev => ({
+          ...prev,
+          [station.id]: result
+        }));
+        
+        return result;
+      } else {
+        // Backend validation failed - assume reachable but show warning
+        const result = {
+          reachable: true,
+          message: "Backend validation unavailable - cannot verify reachability"
+        };
+        
+        // Cache the result
+        setStationReachability(prev => ({
+          ...prev,
+          [station.id]: result
+        }));
+        
+        return result;
+      }
+    } catch (error) {
+      console.error('Error validating station reachability:', error);
+      const result = { 
+        reachable: true, 
+        message: "Unable to validate reachability - backend service unavailable" 
+      };
+      
+      // Cache the result
+      setStationReachability(prev => ({
+        ...prev,
+        [station.id]: result
+      }));
+      
+      return result;
+    }
+  }, [start, parseLatLng, directionsResponse]);
+
+  // Effect to check reachability when a station is selected
+  useEffect(() => {
+    if (selectedStation && batteryRange && showChargingRoute && chargingStopInfo?.needsCharging) {
+      if (!stationReachability[selectedStation.id]) {
+        checkStationReachability(selectedStation, batteryRange);
+      }
+    }
+  }, [selectedStation, batteryRange, showChargingRoute, chargingStopInfo, checkStationReachability, stationReachability]);
+
+
 
   // Helper function to calculate distance from a point to the route path
   const getDistanceToRoute = useCallback(
@@ -889,6 +988,8 @@ export default function MapWeb({
           />
         )}
 
+
+
         {/* Charging station markers - filtered by route proximity */}
         {(() => {
           const stationsToRender = filteredStations();
@@ -1029,6 +1130,8 @@ export default function MapWeb({
                 </div>
               )}
 
+
+
               {selectedStation.connections &&
                 selectedStation.connections.length > 0 && (
                   <div>
@@ -1054,7 +1157,7 @@ export default function MapWeb({
         )}
       </GoogleMap>
 
-      {/* Route info card - Google Maps style */}
+      {/* Route info card */}
       {((distance && duration) || (chargingStopInfo && chargingStopInfo.needsCharging)) && (
         <div
           style={{
@@ -1083,7 +1186,7 @@ export default function MapWeb({
                 <div style={{ 
                   display: "flex", 
                   alignItems: "center", 
-                  marginBottom: "8px" 
+                  marginBottom: "4px" 
                 }}>
                   <div style={{
                     width: "12px",
@@ -1110,10 +1213,10 @@ export default function MapWeb({
                 
                 <div style={{ 
                   fontSize: "13px", 
-                  color: "#ea4335", 
+                  color: chargingStopInfo.manuallySelected ? "#1976d2" : "#ea4335", 
                   marginBottom: "4px" 
                 }}>
-                  Fastest route with charging • via {autoSelectedChargingStation?.title}
+                  ⚡ Fastest route with charging • via {autoSelectedChargingStation?.title}
                 </div>
                 
                 <div style={{ 
@@ -1134,7 +1237,7 @@ export default function MapWeb({
                 )}
               </div>
 
-              {/* Route Steps - Google Maps style */}
+              {/* Route Steps */}
               <div style={{ borderTop: "1px solid #e8eaed", paddingTop: "12px" }}>
                 
                 {/* Step 1: Drive to charging station */}

@@ -3,9 +3,9 @@
 
 const fetch = require("node-fetch");
 
-// Helper function to calculate distance between two points using Haversine formula (fallback)
+// Helper function to calculate distance between two points
 function calculateStraightLineDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371; // Earth's radius in kilometers
+  const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a = 
@@ -52,7 +52,7 @@ async function calculateDistance(lat1, lon1, lat2, lon2, googleMapsApiKey) {
   }
 }
 
-// Main function to calculate actual route distance using Google Directions API
+// Calculate actual route distance using Google Directions API
 async function calculateActualRouteDistance(start, end, googleMapsApiKey) {
   try {
     if (!googleMapsApiKey) {
@@ -149,15 +149,6 @@ function estimateChargingTime(powerKW, batteryCapacityKWh) {
 // Function to filter viable stations near charging waypoint
 async function filterViableStations(allStations, start, end, chargingWaypoint, batteryRange, batteryCapacity, googleMapsApiKey) {
   
-  console.log(`🔍 Starting filtering with ${allStations.length} total stations`);
-  console.log(`🔍 Battery range: ${batteryRange}km, Target waypoint: ${chargingWaypoint.lat.toFixed(4)}, ${chargingWaypoint.lng.toFixed(4)}`);
-  
-  // Debug: Log first station structure
-  if (allStations.length > 0) {
-    console.log(`🔍 Sample station fields:`, Object.keys(allStations[0]));
-    console.log(`🔍 Sample station:`, JSON.stringify(allStations[0], null, 2).substring(0, 200) + '...');
-  }
-  
   let filteredByBasicData = 0;
   let filteredByStatus = 0;
   let filteredByDistance = 0;
@@ -221,20 +212,11 @@ async function filterViableStations(allStations, start, end, chargingWaypoint, b
     return true;
   });
   
-  console.log(`🔍 Filtering results:`);
-  console.log(`   - Filtered by basic data: ${filteredByBasicData}`);
-  console.log(`   - Filtered by status: ${filteredByStatus}`);
-  console.log(`   - Filtered by distance (>30km): ${filteredByDistance}`);
-  console.log(`   - Filtered by destination reach: ${filteredByDestinationReach}`);
-  console.log(`   - Remaining stations: ${nearbyStations.length}`);
-  
   // Sort by preliminary efficiency score (best candidates first)
   nearbyStations.sort((a, b) => b._preliminaryScore - a._preliminaryScore);
   
   const maxCandidates = Math.min(nearbyStations.length, 15); // Check top 15 by preliminary score
   const candidates = nearbyStations.slice(0, maxCandidates);
-  
-  console.log(`🎯 Found ${nearbyStations.length} stations near target point, checking top ${candidates.length} candidates by efficiency`);
   
   // Second pass: Use Google Maps API to get precise distances for top candidates
   const viableStations = [];
@@ -245,7 +227,6 @@ async function filterViableStations(allStations, start, end, chargingWaypoint, b
     
     // Check if this station is reachable (must have at least 20% battery when arriving)
     if (roadDistanceFromStart > parseFloat(batteryRange) * 0.80) { // 20% battery remaining minimum
-      console.log(`❌ Station too far: ${roadDistanceFromStart.toFixed(1)}km > ${(parseFloat(batteryRange) * 0.80).toFixed(1)}km`);
       continue;
     }
     
@@ -257,12 +238,10 @@ async function filterViableStations(allStations, start, end, chargingWaypoint, b
     
     // Check if station can complete the journey with a full charge
     if (roadDistanceToEnd > parseFloat(batteryRange) - 20) { // 20km safety buffer
-      console.log(`❌ Can't reach destination: ${roadDistanceToEnd.toFixed(1)}km > ${(parseFloat(batteryRange) - 20).toFixed(1)}km`);
       continue;
     }
     
     const batteryRemainingAtStation = ((parseFloat(batteryRange) - roadDistanceFromStart) / parseFloat(batteryRange) * 100);
-    console.log(`✅ Viable station: ${roadDistanceFromStart.toFixed(1)}km from start (${batteryRemainingAtStation.toFixed(0)}% battery remaining), ${roadDistanceToEnd.toFixed(1)}km to end`);
     
     // Add precise distance data to station
     station.roadDistanceFromStart = roadDistanceFromStart;
@@ -278,13 +257,11 @@ async function filterViableStations(allStations, start, end, chargingWaypoint, b
     delete station._preliminaryScore;
   });
   
-  console.log(`Final viable stations: ${viableStations.length}`);
   return viableStations;
 }
 
 // Function to score and rank charging stations with precise road distances
 async function scoreAndRankStations(viableStations, start, end, totalDistance, batteryRange, batteryCapacity, googleMapsApiKey) {
-  console.log(`🎯 Scoring ${viableStations.length} viable stations...`);
   const scoredStations = [];
   
   for (const station of viableStations) {
@@ -307,16 +284,16 @@ async function scoreAndRankStations(viableStations, start, end, totalDistance, b
     const batteryRemainingAtStation = ((parseFloat(batteryRange) - distanceFromStart) / parseFloat(batteryRange)) * 100;
     
     const efficiencyScore =
-      1000 -                                                   // Base positive score
-      (detourDistance * 100) -                                 // VERY HEAVY detour penalty - prioritize minimal detour
-      (distanceFromRoute * 5) -                                // Distance from route penalty
-      (chargingTimeMinutes * 0.1) -                            // Charging time penalty
-      (distanceFromTarget * 1) +                               // Small penalty for being far from ideal charging point
+      1000 - // Base positive score
+      (detourDistance * 100) - // VERY HEAVY detour penalty - prioritize minimal detour
+      (distanceFromRoute * 5) - // Distance from route penalty
+      (chargingTimeMinutes * 0.1) - // Charging time penalty
+      (distanceFromTarget * 1) + // Small penalty for being far from ideal charging point
       (batteryRemainingAtStation > 30 && detourDistance < 5 ? 50 : 0) + // BIG bonus for high battery + low detour
       (batteryRemainingAtStation > 40 && detourDistance < 2 ? 30 : 0) + // Extra bonus for very high battery + minimal detour  
-      ((station.numberOfPoints || 1) * 5) +                   // Bonus for more charging points
-      (maxPowerKW > 100 ? 10 : 0) +                           // Bonus for fast charging
-      (maxPowerKW > 200 ? 5 : 0);                             // Extra bonus for ultra-fast charging
+      ((station.numberOfPoints || 1) * 5) + // Bonus for more charging points
+      (maxPowerKW > 100 ? 10 : 0) + // Bonus for fast charging
+      (maxPowerKW > 200 ? 5 : 0); // Extra bonus for ultra-fast charging
 
     scoredStations.push({
       ...station,
@@ -331,8 +308,6 @@ async function scoreAndRankStations(viableStations, start, end, totalDistance, b
       efficiencyScore: Math.round(efficiencyScore * 10) / 10,
       remainingRangeAtDestination: Math.round((parseFloat(batteryRange) - distanceToEnd) * 10) / 10
     });
-    
-    console.log(`📊 Station scored: ${station.title || 'Unknown'} - Score: ${efficiencyScore.toFixed(1)}, Detour: ${detourDistance.toFixed(1)}km, Battery: ${batteryRemainingAtStation.toFixed(0)}%`);
   }
 
   // Sort by efficiency score (highest first)
@@ -340,7 +315,6 @@ async function scoreAndRankStations(viableStations, start, end, totalDistance, b
     .sort((a, b) => b.efficiencyScore - a.efficiencyScore) // Higher score is better
     .slice(0, 10); // Return top 10 stations
 
-  console.log(`🏆 Top station: ${sortedStations[0]?.title || 'None'} with score ${sortedStations[0]?.efficiencyScore || 'N/A'}`);
   return sortedStations;
 }
 
@@ -350,8 +324,6 @@ async function findRecommendedChargingStation(start, end, batteryRange, batteryC
     // Step 1: Calculate the full route distance using Google Maps API
     const routeData = await calculateActualRouteDistance(start, end, googleMapsApiKey);
     const totalDistance = routeData.distance;
-    
-    console.log(`🔍 Searching for charging stations... (Total stations: ${allStations.length})`);
     
     // Step 2: Calculate charging waypoint at 75% of battery range (25% battery remaining)
     const chargingWaypoint = calculateChargingWaypoint(start, end, totalDistance, batteryRange);
@@ -364,20 +336,15 @@ async function findRecommendedChargingStation(start, end, batteryRange, batteryC
       };
     }
     
-    console.log(`🎯 Target charging point: ${chargingWaypoint.distanceFromStart.toFixed(1)}km from start (${((chargingWaypoint.distanceFromStart/parseFloat(batteryRange))*100).toFixed(0)}% of battery range used, 25% battery remaining)`);
-    console.log(`🎯 Target waypoint coordinates: ${chargingWaypoint.lat.toFixed(4)}, ${chargingWaypoint.lng.toFixed(4)}`);
-    
     // Step 3: Filter viable stations using straight-line calculations and preliminary scoring
     const viableStations = await filterViableStations(allStations, start, end, chargingWaypoint, batteryRange, batteryCapacity, googleMapsApiKey);
     
     if (viableStations.length === 0) {
       return {
         success: false,
-        message: "❌ No viable stations found in initial filtering"
+        message: "No viable stations found in initial filtering"
       };
     }
-    
-    console.log(`✅ Found ${viableStations.length} viable stations, now scoring...`);
     
     // Step 4: Score and rank the viable stations using precise road distances
     const scoredStations = await scoreAndRankStations(viableStations, start, end, totalDistance, batteryRange, batteryCapacity, googleMapsApiKey);
@@ -392,8 +359,6 @@ async function findRecommendedChargingStation(start, end, batteryRange, batteryC
     // Step 5: Return the best station with full details
     const bestStation = scoredStations[0];
     
-    console.log(`🎉 Final result: ${bestStation ? `Selected ${bestStation.title} (Score: ${bestStation.efficiencyScore})` : 'No station selected'}`);
-    
     return {
       success: true,
       station: bestStation,
@@ -404,7 +369,6 @@ async function findRecommendedChargingStation(start, end, batteryRange, batteryC
     };
     
   } catch (error) {
-    console.error('Error in findRecommendedChargingStation:', error);
     return {
       success: false,
       message: `Error finding charging stations: ${error.message}`
