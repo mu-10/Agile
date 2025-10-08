@@ -22,6 +22,7 @@ class ChargingStationDB {
         number_of_points INTEGER,
         status_type TEXT,
         operator TEXT,
+        usage_cost TEXT, -- Pricing information from API
         connections TEXT, -- JSON string
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -37,6 +38,17 @@ class ChargingStationDB {
 
     this.db.exec(createTableSQL);
     createIndexes.forEach(indexSQL => this.db.exec(indexSQL));
+    
+    // Add usage_cost column if it doesn't exist (migration for existing databases)
+    try {
+      this.db.exec('ALTER TABLE charging_stations ADD COLUMN usage_cost TEXT');
+      console.log('Added usage_cost column to existing database');
+    } catch (error) {
+      // Column already exists, which is fine
+      if (!error.message.includes('duplicate column name')) {
+        console.error('Error adding usage_cost column:', error);
+      }
+    }
   }
 
   async migrateFromAPI() {
@@ -64,8 +76,8 @@ class ChargingStationDB {
       // Prepare insert statement
       const insertStmt = this.db.prepare(`
         INSERT OR REPLACE INTO charging_stations 
-        (id, title, address, town, state, latitude, longitude, number_of_points, status_type, operator, connections, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        (id, title, address, town, state, latitude, longitude, number_of_points, status_type, operator, usage_cost, connections, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       `);
 
       // Begin transaction for better performance
@@ -84,6 +96,7 @@ class ChargingStationDB {
               station.NumberOfPoints || null,
               station.StatusType?.Title || null,
               station.OperatorInfo?.Title || null,
+              station.UsageCost || null, // Add pricing information
               JSON.stringify(station.Connections || [])
             );
             inserted++;
@@ -106,7 +119,7 @@ class ChargingStationDB {
     const query = `
       SELECT 
         id, title, address, town, state, latitude, longitude, 
-        number_of_points, status_type, operator, connections
+        number_of_points, status_type, operator, usage_cost, connections
       FROM charging_stations 
       WHERE latitude BETWEEN ? AND ? 
         AND longitude BETWEEN ? AND ?
@@ -128,6 +141,7 @@ class ChargingStationDB {
       numberOfPoints: row.number_of_points,
       statusType: row.status_type,
       operator: row.operator,
+      usageCost: row.usage_cost, // Add pricing information  
       connections: row.connections ? JSON.parse(row.connections).map(conn => ({
         type: conn.ConnectionType?.Title,
         level: conn.Level?.Title,
@@ -141,7 +155,7 @@ class ChargingStationDB {
     const query = `
       SELECT 
         id, title, address, town, state, latitude, longitude, 
-        number_of_points, status_type, operator, connections
+        number_of_points, status_type, operator, usage_cost, connections
       FROM charging_stations 
       LIMIT ?
     `;
@@ -161,6 +175,7 @@ class ChargingStationDB {
       numberOfPoints: row.number_of_points,
       statusType: row.status_type,
       operator: row.operator,
+      usageCost: row.usage_cost, // Add pricing information
       connections: row.connections ? JSON.parse(row.connections).map(conn => ({
         type: conn.ConnectionType?.Title,
         level: conn.Level?.Title,

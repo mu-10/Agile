@@ -955,6 +955,20 @@ export default function MapWeb({
               {selectedStation.numberOfPoints && (
                 <p>Charging Points: {selectedStation.numberOfPoints}</p>
               )}
+              
+              {/* Show pricing information */}
+              {selectedStation.usageCost && (
+                <p style={{ 
+                  color: "#2563eb", 
+                  fontWeight: "600",
+                  backgroundColor: "#f0f9ff",
+                  padding: "4px 8px",
+                  borderRadius: "4px",
+                  margin: "8px 0"
+                }}>
+                  💳 Price: {selectedStation.usageCost}
+                </p>
+              )}
 
               {/* Show charging details if this is the recommended station */}
               {autoSelectedChargingStation && selectedStation.id === autoSelectedChargingStation.id && (
@@ -970,6 +984,15 @@ export default function MapWeb({
                   <div><strong>Est. Charging Time:</strong> {selectedStation.estimatedChargingTimeMinutes} min</div>
                   <div><strong>Distance from start:</strong> {selectedStation.distanceFromStart}km</div>
                   <div><strong>Range at destination:</strong> {selectedStation.remainingRangeAtDestination}km</div>
+                  {selectedStation.usageCost && (
+                    <div style={{ 
+                      marginTop: "4px", 
+                      color: "#2563eb", 
+                      fontWeight: "600"
+                    }}>
+                      <strong>💳 Price:</strong> {selectedStation.usageCost}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1006,140 +1029,304 @@ export default function MapWeb({
             top: 20,
             left: 20,
             background: "#fff",
-            padding: "16px 20px",
+            padding: "16px",
             borderRadius: "8px",
-            boxShadow: "0 2px 10px rgba(0,0,0,0.15)",
-            border: "1px solid rgba(0,0,0,0.08)",
-            fontFamily: "Roboto, Arial, sans-serif",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+            border: "1px solid #dadce0",
+            fontFamily: "'Google Sans', Roboto, Arial, sans-serif",
             fontSize: "14px",
-            minWidth: "250px",
-            maxWidth: "400px",
+            minWidth: "240px",
+            maxWidth: "340px",
+            maxHeight: "70vh",
+            overflowY: "auto",
             zIndex: 1000,
           }}
         >
-          <div style={{ marginBottom: "8px", display: "flex", alignItems: "center" }}>
-            <div style={{
-              width: "16px",
-              height: "16px",
-              backgroundColor: showChargingRoute ? "#ea4335" : "#4285f4",
-              borderRadius: "50%",
-              marginRight: "8px",
-              flexShrink: 0
-            }}></div>
-            <div style={{ color: "#202124", fontWeight: "500" }}>
-              {showChargingRoute ? "Route with Charging" : "Route Details"}
-            </div>
-          </div>
-
           {/* Charging route information */}
           {showChargingRoute && chargingStopInfo?.routeDetails && (
-            <div style={{ marginBottom: "12px" }}>
-              <div style={{ marginBottom: "8px", fontSize: "13px", color: "#ea4335", fontWeight: "500" }}>
-                🔋 Charging Required
-              </div>
-              
-              {/* Leg 1: To charging station */}
-              <div style={{ marginBottom: "6px", fontSize: "12px" }}>
-                <span style={{ color: "#5f6368" }}>To charging station: </span>
-                <span style={{ color: "#202124", fontWeight: "500" }}>
-                  {chargingStopInfo.routeDetails.timeToStation} min • {distance}
-                </span>
-              </div>
-              
-              {/* Charging time */}
-              <div style={{ marginBottom: "6px", fontSize: "12px" }}>
-                <span style={{ color: "#5f6368" }}>Charging time: </span>
-                <span style={{ color: "#202124", fontWeight: "500" }}>
-                  {chargingStopInfo.routeDetails.chargingTime} min • {autoSelectedChargingStation?.maxPowerKW}kW
-                </span>
-              </div>
-              
-              {/* Leg 2: From charging station */}
-              <div style={{ marginBottom: "6px", fontSize: "12px" }}>
-                <span style={{ color: "#5f6368" }}>To destination: </span>
-                <span style={{ color: "#202124", fontWeight: "500" }}>
-                  {chargingStopInfo.routeDetails.timeFromStation} min • {chargingStopInfo.routeDetails.distanceToEnd}km
-                </span>
-              </div>
-              
-              {/* Total time */}
-              <div style={{ 
-                marginTop: "8px", 
-                paddingTop: "8px", 
-                borderTop: "1px solid #e5e7eb",
-                fontSize: "13px" 
-              }}>
-                <span style={{ color: "#5f6368" }}>Total time: </span>
-                <span style={{ color: "#202124", fontWeight: "600" }}>
-                  {chargingStopInfo.routeDetails.totalTravelTime} min
-                </span>
-                <span style={{ color: "#5f6368", fontSize: "11px", marginLeft: "4px" }}>
-                  ({chargingStopInfo.routeDetails.totalTravelTime - chargingStopInfo.routeDetails.originalTravelTime} min extra)
-                </span>
-              </div>
-              
-              {/* Range at destination */}
-              <div style={{ fontSize: "12px", marginTop: "4px" }}>
-                <span style={{ color: "#5f6368" }}>Range at destination: </span>
-                <span style={{ color: "#34a853", fontWeight: "500" }}>
-                  {chargingStopInfo.routeDetails.remainingRangeAtDestination}km
-                </span>
-              </div>
-              
-              {/* Station info */}
-              {autoSelectedChargingStation && (
+            <div>
+              {/* Total Trip Summary - Google Maps style */}
+              <div style={{ marginBottom: "16px" }}>
                 <div style={{ 
-                  marginTop: "8px", 
-                  padding: "8px", 
-                  backgroundColor: "#f8f9fa", 
-                  borderRadius: "4px",
-                  fontSize: "11px"
+                  display: "flex", 
+                  alignItems: "center", 
+                  marginBottom: "8px" 
                 }}>
-                  <div style={{ fontWeight: "500", color: "#202124" }}>
-                    📍 {autoSelectedChargingStation.title}
+                  <div style={{
+                    width: "12px",
+                    height: "12px",
+                    backgroundColor: "#1a73e8",
+                    borderRadius: "50%",
+                    marginRight: "8px",
+                  }}></div>
+                  <span style={{ 
+                    fontSize: "16px", 
+                    fontWeight: "500", 
+                    color: "#202124" 
+                  }}>
+                    {Math.round(chargingStopInfo.routeDetails.totalTravelTime)} min
+                  </span>
+                  <span style={{ 
+                    fontSize: "14px", 
+                    color: "#5f6368", 
+                    marginLeft: "8px" 
+                  }}>
+                    ({chargingStopInfo.routeDetails.totalDistanceViaStation} km)
+                  </span>
+                </div>
+                
+                <div style={{ 
+                  fontSize: "13px", 
+                  color: "#ea4335", 
+                  marginBottom: "4px" 
+                }}>
+                  Fastest route with charging • via {autoSelectedChargingStation?.title}
+                </div>
+                
+                <div style={{ 
+                  fontSize: "12px", 
+                  color: "#5f6368" 
+                }}>
+                  +{chargingStopInfo.routeDetails.totalTravelTime - chargingStopInfo.routeDetails.originalTravelTime} min longer than usual due to charging
+                </div>
+              </div>
+
+              {/* Route Steps - Google Maps style */}
+              <div style={{ borderTop: "1px solid #e8eaed", paddingTop: "12px" }}>
+                
+                {/* Step 1: Drive to charging station */}
+                <div style={{ 
+                  display: "flex", 
+                  marginBottom: "12px",
+                  paddingBottom: "12px",
+                  borderBottom: "1px solid #f1f3f4"
+                }}>
+                  <div style={{ 
+                    width: "24px", 
+                    flexShrink: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    marginRight: "12px"
+                  }}>
+                    <div style={{
+                      width: "8px",
+                      height: "8px",
+                      backgroundColor: "#1a73e8",
+                      borderRadius: "50%",
+                      border: "2px solid #fff",
+                      boxShadow: "0 0 0 2px #1a73e8"
+                    }}></div>
+                    <div style={{
+                      width: "2px",
+                      height: "20px",
+                      backgroundColor: "#dadce0",
+                      marginTop: "4px"
+                    }}></div>
                   </div>
-                  <div style={{ color: "#5f6368", marginTop: "2px" }}>
-                    {autoSelectedChargingStation.numberOfPoints} sockets • {autoSelectedChargingStation.operator}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ 
+                      fontSize: "14px", 
+                      color: "#202124", 
+                      fontWeight: "400",
+                      marginBottom: "2px"
+                    }}>
+                      Drive to charging station
+                    </div>
+                    <div style={{ 
+                      fontSize: "12px", 
+                      color: "#5f6368" 
+                    }}>
+                      {chargingStopInfo.routeDetails.timeToStation} min • {chargingStopInfo.routeDetails.originalDistance || distance} km
+                      {chargingStopInfo.routeDetails.detourDistance > 0 && (
+                        <span style={{ color: "#ea4335" }}>
+                          • +{chargingStopInfo.routeDetails.detourDistance}km detour
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              )}
+
+                {/* Step 2: Charge */}
+                <div style={{ 
+                  display: "flex", 
+                  marginBottom: "12px",
+                  paddingBottom: "12px",
+                  borderBottom: "1px solid #f1f3f4"
+                }}>
+                  <div style={{ 
+                    width: "24px", 
+                    flexShrink: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    marginRight: "12px"
+                  }}>
+                    <div style={{
+                      width: "8px",
+                      height: "8px",
+                      backgroundColor: "#fbbc04",
+                      borderRadius: "50%",
+                      border: "2px solid #fff",
+                      boxShadow: "0 0 0 2px #fbbc04"
+                    }}></div>
+                    <div style={{
+                      width: "2px",
+                      height: "20px",
+                      backgroundColor: "#dadce0",
+                      marginTop: "4px"
+                    }}></div>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ 
+                      fontSize: "14px", 
+                      color: "#202124", 
+                      fontWeight: "400",
+                      marginBottom: "2px"
+                    }}>
+                      Charge at {autoSelectedChargingStation?.title}
+                    </div>
+                    <div style={{ 
+                      fontSize: "12px", 
+                      color: "#5f6368" 
+                    }}>
+                      {chargingStopInfo.routeDetails.chargingTime} min • {autoSelectedChargingStation?.maxPowerKW}kW
+                      {autoSelectedChargingStation?.usageCost && (
+                        <span> • {autoSelectedChargingStation.usageCost}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Step 3: Drive to destination */}
+                <div style={{ 
+                  display: "flex", 
+                  marginBottom: "8px"
+                }}>
+                  <div style={{ 
+                    width: "24px", 
+                    flexShrink: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    marginRight: "12px"
+                  }}>
+                    <div style={{
+                      width: "8px",
+                      height: "8px",
+                      backgroundColor: "#34a853",
+                      borderRadius: "50%",
+                      border: "2px solid #fff",
+                      boxShadow: "0 0 0 2px #34a853"
+                    }}></div>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ 
+                      fontSize: "14px", 
+                      color: "#202124", 
+                      fontWeight: "400",
+                      marginBottom: "2px"
+                    }}>
+                      Drive to destination
+                    </div>
+                    <div style={{ 
+                      fontSize: "12px", 
+                      color: "#5f6368",
+                      marginBottom: "4px"
+                    }}>
+                      {chargingStopInfo.routeDetails.timeFromStation} min • {chargingStopInfo.routeDetails.distanceToEnd} km
+                    </div>
+                    <div style={{ 
+                      fontSize: "12px", 
+                      color: "#34a853",
+                      fontWeight: "500"
+                    }}>
+                      Range at arrival: {chargingStopInfo.routeDetails.remainingRangeAtDestination}km
+                    </div>
+                  </div>
+                </div>
+
+                {/* Clickable station card */}
+                {autoSelectedChargingStation && (
+                  <div 
+                    style={{ 
+                      marginTop: "12px", 
+                      padding: "8px", 
+                      backgroundColor: "#f8f9fa", 
+                      borderRadius: "4px",
+                      fontSize: "12px",
+                      cursor: "pointer",
+                      border: "1px solid #dadce0",
+                      transition: "all 0.2s ease"
+                    }}
+                    onClick={() => handleRecommendedStationClick(autoSelectedChargingStation)}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = "#e8f0fe";
+                      e.currentTarget.style.borderColor = "#1a73e8";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = "#f8f9fa";
+                      e.currentTarget.style.borderColor = "#dadce0";
+                    }}
+                    title="Click to zoom to charging station"
+                  >
+                    <div style={{ fontWeight: "500", color: "#202124", fontSize: "13px" }}>
+                      {autoSelectedChargingStation.title}
+                    </div>
+                    <div style={{ color: "#5f6368", marginTop: "2px" }}>
+                      {autoSelectedChargingStation.numberOfPoints} charging points • {autoSelectedChargingStation.operator}
+                    </div>
+                    <div style={{ 
+                      color: "#1a73e8", 
+                      fontSize: "11px", 
+                      marginTop: "4px",
+                      fontWeight: "500"
+                    }}>
+                      Tap for details
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
           {/* Regular route information */}
           {!showChargingRoute && distance && duration && (
             <>
-              <div style={{ display: "flex", alignItems: "center", marginBottom: "4px" }}>
-                <div style={{
-                  width: "16px",
-                  height: "16px",
-                  marginRight: "8px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center"
+              <div style={{ marginBottom: "8px" }}>
+                <div style={{ 
+                  display: "flex", 
+                  alignItems: "center", 
+                  marginBottom: "4px" 
                 }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="#5f6368">
-                    <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/>
-                    <path d="M7 12h2v5H7zm4-6h2v11h-2zm4 3h2v8h-2z"/>
-                  </svg>
+                  <div style={{
+                    width: "12px",
+                    height: "12px",
+                    backgroundColor: "#1a73e8",
+                    borderRadius: "50%",
+                    marginRight: "8px",
+                  }}></div>
+                  <span style={{ 
+                    fontSize: "16px", 
+                    fontWeight: "500", 
+                    color: "#202124" 
+                  }}>
+                    {duration}
+                  </span>
+                  <span style={{ 
+                    fontSize: "14px", 
+                    color: "#5f6368", 
+                    marginLeft: "8px" 
+                  }}>
+                    ({distance})
+                  </span>
                 </div>
-                <span style={{ color: "#202124", fontWeight: "500" }}>{distance}</span>
-              </div>
-              
-              <div style={{ display: "flex", alignItems: "center" }}>
-                <div style={{
-                  width: "16px",
-                  height: "16px",
-                  marginRight: "8px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center"
+                <div style={{ 
+                  fontSize: "13px", 
+                  color: "#1a73e8" 
                 }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="#5f6368">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                  </svg>
+                  Fastest route
                 </div>
-                <span style={{ color: "#5f6368" }}>{duration}</span>
               </div>
             </>
           )}
