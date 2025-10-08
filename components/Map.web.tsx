@@ -31,6 +31,7 @@ type Props = {
   batteryCapacity: number;
   onMapsReady?: () => void; // notify parent when Maps JS is ready (web)
   showRecommendedLocations?: boolean; // whether to show recommended charging stations
+  mapStyle?: any; // Accepts Google Maps style array
 };
 
 const chargingIcon = "https://maps.google.com/mapfiles/ms/icons/green-dot.png";
@@ -48,6 +49,7 @@ export default function MapWeb({
   batteryCapacity,
   onMapsReady,
   showRecommendedLocations = true, // default to showing recommended locations
+  mapStyle,
 }: Props) {
   const [currentLocation, setCurrentLocation] =
     useState<google.maps.LatLngLiteral | null>(null);
@@ -535,8 +537,29 @@ export default function MapWeb({
       setMap(mapInstance);
       // Initial fetch when map loads
       fetchStations(mapInstance);
+
+      // Example: Add charger marker and info window with dark mode support
+      const chargerMarker = new window.google.maps.Marker({
+        position: { lat: 43.6532, lng: -79.3832 }, // Example charger location
+        map: mapInstance,
+        icon: {
+          url: "https://maps.google.com/mapfiles/ms/icons/green-dot.png",
+        },
+      });
+      const chargerInfoContent = `<div style="padding:10px;min-width:160px;background:${mapStyle ? '#27272a' : '#fff'};color:${mapStyle ? '#d1d5db' : '#111827'};border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.15);font-family:system-ui,sans-serif;">
+        <strong>Charger Info</strong><br />
+        Type: Fast<br />
+        Status: Available<br />
+        Power: 50kW
+      </div>`;
+      const chargerInfoWindow = new window.google.maps.InfoWindow({
+        content: chargerInfoContent,
+      });
+      chargerMarker.addListener("click", () => {
+        chargerInfoWindow.open(mapInstance, chargerMarker);
+      });
     },
-    [fetchStations]
+    [fetchStations, mapStyle]
   );
 
   // Get user location
@@ -882,7 +905,7 @@ export default function MapWeb({
         center={initialCenter.current} //  only set once
         zoom={MAPS_CONFIG.defaultZoom}
         mapContainerStyle={{ width: "100%", height: "100%" }}
-        options={{ streetViewControl: false, mapTypeControl: false }}
+        options={{ streetViewControl: false, mapTypeControl: false, styles: mapStyle || undefined }}
         onLoad={onLoad}
         onBoundsChanged={onBoundsChanged}
       >
@@ -1054,7 +1077,7 @@ export default function MapWeb({
             }}
             onCloseClick={() => setSelectedStation(null)}
           >
-            <div style={{ minWidth: 200 }}>
+            <div style={{ minWidth: 200, background: mapStyle ? "#18181b" : "#fff", color: mapStyle ? "#d1d5db" : "#111827", borderRadius: "8px", padding: "12px" }}>
               {/* Show if this is the recommended station */}
               {showRecommendedLocations && autoSelectedChargingStation && selectedStation.id === autoSelectedChargingStation.id && (
                 <div style={{
@@ -1142,7 +1165,7 @@ export default function MapWeb({
 
               {selectedStation.connections &&
                 selectedStation.connections.length > 0 && (
-                  <div>
+                  <div style={{ background: mapStyle ? "#27272a" : "#fff", color: mapStyle ? "#d1d5db" : "#111827", borderRadius: "6px", padding: "8px", marginTop: "8px" }}>
                     <strong>Connection Types:</strong>
                     <ul style={{ margin: "8px 0", paddingLeft: "20px" }}>
                       {selectedStation.connections.map(

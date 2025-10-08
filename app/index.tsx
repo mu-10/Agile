@@ -248,6 +248,24 @@ export default function Index() {
     setCapacityError(""); // Clear any existing capacity error
   };
 
+  // Google Maps dark style array
+  const darkMapStyle = [
+    { elementType: "geometry", stylers: [{ color: "#212121" }] },
+    { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+    { elementType: "labels.text.fill", stylers: [{ color: "#757575" }] },
+    { elementType: "labels.text.stroke", stylers: [{ color: "#212121" }] },
+    { featureType: "administrative", elementType: "geometry", stylers: [{ color: "#757575" }] },
+    { featureType: "poi", elementType: "geometry", stylers: [{ color: "#181818" }] },
+    { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#263c3f" }] },
+    { featureType: "road", elementType: "geometry", stylers: [{ color: "#383838" }] },
+    { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#212121" }] },
+    { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#9e9e9e" }] },
+    { featureType: "transit", elementType: "geometry", stylers: [{ color: "#2f3948" }] },
+    { featureType: "water", elementType: "geometry", stylers: [{ color: "#000000" }] },
+    { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#515c6d" }] },
+    { featureType: "water", elementType: "labels.text.stroke", stylers: [{ color: "#17263c" }] }
+  ];
+
   return (
     <View style={{ flex: 1, backgroundColor: darkMode ? "#18181b" : "#fff" }}>
       <View style={[
@@ -479,7 +497,7 @@ export default function Index() {
       )}
 
   {/* Always show a solid grey divider between input fields and map */}
-  <View style={{ width: "100%", backgroundColor: "#f3f4f6", height: 8 }} />
+  <View style={{ width: "100%", backgroundColor: darkMode ? "#27272a" : "#f3f4f6", height: 8 }} />
       <View style={{ flex: 1 }}>
         <MapWeb
           start={plannedStart || ""} // only sends planned values
@@ -491,6 +509,7 @@ export default function Index() {
           onLocationChange={(loc) => setCurrentLocation(loc)}
           onMapsReady={() => setIsMapsReady(true)}
           showRecommendedLocations={!!(plannedStart && plannedEnd)} // only show when a route is planned
+          mapStyle={darkMode ? darkMapStyle : undefined}
         />
       </View>
     </View>
