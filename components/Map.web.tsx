@@ -29,6 +29,7 @@ type Props = {
   batteryRange: number;
   batteryCapacity: number;
   onMapsReady?: () => void; // notify parent when Maps JS is ready (web)
+  showRecommendedLocations?: boolean; // whether to show recommended charging stations
 };
 
 const chargingIcon = "https://maps.google.com/mapfiles/ms/icons/green-dot.png";
@@ -45,6 +46,7 @@ export default function MapWeb({
   batteryRange,
   batteryCapacity,
   onMapsReady,
+  showRecommendedLocations = true, // default to showing recommended locations
 }: Props) {
   const [currentLocation, setCurrentLocation] =
     useState<google.maps.LatLngLiteral | null>(null);
@@ -166,44 +168,88 @@ export default function MapWeb({
     if (!directionsServiceRef.current) return;
 
     try {
-      // Calculate route from charging station to destination
       const chargingStationCoords = { lat: station.latitude, lng: station.longitude };
-      
-      directionsServiceRef.current.route(
-        {
-          origin: chargingStationCoords,
-          destination: endCoords,
-          travelMode: google.maps.TravelMode.DRIVING,
-        },
-        (result, status) => {
-          if (status === "OK" && result) {
-            setChargingRouteResponse(result);
-          } else {
-            console.error("Charging route calculation failed:", status);
-          }
-        }
-      );
+      let routeToStation: any = null;
+      let routeFromStation: any = null;
 
-      // Update main route to go to charging station
-      directionsServiceRef.current.route(
-        {
-          origin: startCoords,
-          destination: chargingStationCoords,
-          travelMode: google.maps.TravelMode.DRIVING,
-        },
-        (result, status) => {
-          if (status === "OK" && result) {
-            setDirectionsResponse(result);
-            const leg = result.routes[0].legs[0];
-            setDistance(leg.distance?.text || null);
-            setDuration(leg.duration?.text || null);
+      // Calculate route from start to charging station
+      await new Promise<void>((resolve, reject) => {
+        directionsServiceRef.current!.route(
+          {
+            origin: startCoords,
+            destination: chargingStationCoords,
+            travelMode: google.maps.TravelMode.DRIVING,
+          },
+          (result, status) => {
+            if (status === "OK" && result) {
+              routeToStation = result;
+              resolve();
+            } else {
+              console.error("Route to charging station failed:", status);
+              reject(new Error(`Route calculation failed: ${status}`));
+            }
           }
-        }
-      );
+        );
+      });
+
+      // Calculate route from charging station to destination
+      await new Promise<void>((resolve, reject) => {
+        directionsServiceRef.current!.route(
+          {
+            origin: chargingStationCoords,
+            destination: endCoords,
+            travelMode: google.maps.TravelMode.DRIVING,
+          },
+          (result, status) => {
+            if (status === "OK" && result) {
+              routeFromStation = result;
+              setChargingRouteResponse(result);
+              resolve();
+            } else {
+              console.error("Route from charging station failed:", status);
+              reject(new Error(`Route calculation failed: ${status}`));
+            }
+          }
+        );
+      });
+
+      // Calculate route details if both routes are available
+      if (routeToStation && routeFromStation) {
+        const legToStation = routeToStation.routes[0].legs[0];
+        const legFromStation = routeFromStation.routes[0].legs[0];
+        
+        const timeToStation = legToStation.duration?.value || 0; // in seconds
+        const timeFromStation = legFromStation.duration?.value || 0; // in seconds
+        const chargingTime = (station.estimatedChargingTimeMinutes || 30) * 60; // convert to seconds
+        
+        const totalTravelTime = Math.round((timeToStation + timeFromStation + chargingTime) / 60); // in minutes
+        const originalTravelTime = duration ? parseInt(duration.replace(/\D/g, '')) : Math.round((timeToStation + timeFromStation) / 60);
+        
+        const routeDetails = {
+          totalTravelTime,
+          originalTravelTime,
+          totalDistanceViaStation: station.totalDistanceViaStation || ((legToStation.distance?.value || 0) + (legFromStation.distance?.value || 0)) / 1000,
+          detourDistance: station.detourDistance || 0,
+          timeToStation: Math.round(timeToStation / 60),
+          timeFromStation: Math.round(timeFromStation / 60),
+          chargingTime: Math.round(chargingTime / 60),
+          originalDistance: legToStation.distance?.text || ''
+        };
+
+        // Update chargingStopInfo with route details
+        setChargingStopInfo((prev: any) => ({
+          ...prev,
+          routeDetails
+        }));
+
+        // Update distance/duration to show total trip
+        setDistance(`${Math.round(routeDetails.totalDistanceViaStation)} km`);
+        setDuration(`${routeDetails.totalTravelTime} min`);
+      }
     } catch (error) {
       console.error("Error calculating charging route:", error);
     }
-  }, []);
+  }, [duration]);
 
   // Helper function to calculate distance from a point to the route path
   const getDistanceToRoute = useCallback(
@@ -487,13 +533,10 @@ export default function MapWeb({
     }
 
     if (!origin || !destination) {
-      console.log("Missing origin or destination:", { origin, destination });
       return;
     }
 
-    console.log("Making directions request with:", { origin, destination });
-
-    // Calculate the route - SIMPLIFIED VERSION FOR DEBUGGING
+    // Calculate the route
     directionsServiceRef.current.route(
       {
         origin,
@@ -502,24 +545,12 @@ export default function MapWeb({
         provideRouteAlternatives: false,
       },
       async (result, status) => {
-        console.log("📍 Directions result:", { status, result });
-        
         if (status === "OK" && result) {
           const leg = result.routes[0].legs[0];
           const routeDistance = parseFloat(leg.distance?.text?.replace(/[^\d.]/g, "") || "0");
           
-          console.log("Route calculated successfully:", {
-            distance: leg.distance?.text,
-            duration: leg.duration?.text,
-            routeDistance,
-            batteryRange,
-            exceedsRange: routeDistance > batteryRange,
-            comparison: `${routeDistance} > ${batteryRange} = ${routeDistance > batteryRange}`
-          });
-          
           // Check if charging is needed
           if (routeDistance > batteryRange && batteryRange > 0) {
-            console.log("🔋 CHARGING NEEDED - route exceeds battery range");
             
             // Need charging - find optimal charging station
             const startCoords = parseLatLng(start) || (typeof origin === 'object' && 'lat' in origin ? origin : null);
@@ -532,16 +563,17 @@ export default function MapWeb({
                 lat: endLocation.lat(),
                 lng: endLocation.lng()
               };
-              console.log("📍 Extracted end coordinates from route:", endCoords);
             }
             
-            console.log("📍 Parsed coordinates:", { startCoords, endCoords });
-            
             if (startCoords && endCoords) {
-              console.log("🔍 Finding charging stop for coordinates:", { startCoords, endCoords });
+              // Store the original full route for station filtering
+              setDirectionsResponse(result);
+              setDistance(leg.distance?.text || null);
+              setDuration(leg.duration?.text || null);
+              
+              // Find charging stop (but don't override the main route)
               await findChargingStop(startCoords, endCoords);
             } else {
-              console.log("❌ Could not parse coordinates for charging stop - showing direct route");
               // Show direct route anyway
               setDirectionsResponse(result);
               setDistance(leg.distance?.text || null);
@@ -551,11 +583,6 @@ export default function MapWeb({
               setChargingRouteResponse(null);
             }
           } else {
-            console.log("✅ No charging needed - using direct route");
-            console.log("Reason:", {
-              routeDistanceLessOrEqualToBattery: routeDistance <= batteryRange,
-              batteryRangeIsZero: batteryRange <= 0
-            });
             // No charging needed - use direct route
             setDirectionsResponse(result);
             setDistance(leg.distance?.text || null);
@@ -631,7 +658,6 @@ export default function MapWeb({
 
       if (response.ok) {
         const data = await response.json();
-        console.log('Charging station API response:', data);
         if (data.needsCharging && data.chargingStation) {
           setRecommendedStation(data.chargingStation);
           
@@ -835,7 +861,7 @@ export default function MapWeb({
         )}
 
         {/* Auto-selected charging station marker */}
-        {autoSelectedChargingStation && (
+        {showRecommendedLocations && autoSelectedChargingStation && (
           <Marker
             position={{
               lat: autoSelectedChargingStation.latitude,
@@ -847,14 +873,11 @@ export default function MapWeb({
               scaledSize: new window.google.maps.Size(40, 40),
             }}
             onClick={() => {
-              console.log("🔴 Recommended charging station clicked:", autoSelectedChargingStation);
-              
               // Set as selected station for info window
               setSelectedStation(autoSelectedChargingStation);
               
               // Center map on the station
               if (map) {
-                console.log("📍 Centering map on recommended station");
                 map.setCenter({
                   lat: autoSelectedChargingStation.latitude,
                   lng: autoSelectedChargingStation.longitude,
@@ -900,13 +923,13 @@ export default function MapWeb({
         })()}
 
         {/* Recommended charging station marker - always show even if not in filtered list */}
-        {recommendedStation && !filteredStations().some(station => station.id === recommendedStation.id) && (
+        {showRecommendedLocations && recommendedStation && !filteredStations().some(station => station.id === recommendedStation.id) && (
           <Marker
             key={`recommended-${recommendedStation.id}`}
             position={{ lat: recommendedStation.latitude, lng: recommendedStation.longitude }}
             title={`🔋 Recommended: ${recommendedStation.title}`}
             icon={{
-              url: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png",
+              url: "https://maps.google.com/mapfiles/ms/icons/orange-dot.png",
               scaledSize: new window.google.maps.Size(48, 48),
             }}
             onClick={() => setSelectedStation(recommendedStation)}
@@ -924,7 +947,7 @@ export default function MapWeb({
           >
             <div style={{ minWidth: 200 }}>
               {/* Show if this is the recommended station */}
-              {autoSelectedChargingStation && selectedStation.id === autoSelectedChargingStation.id && (
+              {showRecommendedLocations && autoSelectedChargingStation && selectedStation.id === autoSelectedChargingStation.id && (
                 <div style={{
                   backgroundColor: "#fef2f2",
                   border: "1px solid #fecaca",
@@ -971,7 +994,7 @@ export default function MapWeb({
               )}
 
               {/* Show charging details if this is the recommended station */}
-              {autoSelectedChargingStation && selectedStation.id === autoSelectedChargingStation.id && (
+              {showRecommendedLocations && autoSelectedChargingStation && selectedStation.id === autoSelectedChargingStation.id && (
                 <div style={{ 
                   backgroundColor: "#f0fdf4", 
                   border: "1px solid #bbf7d0", 
@@ -983,6 +1006,16 @@ export default function MapWeb({
                   <div><strong>Max Power:</strong> {selectedStation.maxPowerKW}kW</div>
                   <div><strong>Est. Charging Time:</strong> {selectedStation.estimatedChargingTimeMinutes} min</div>
                   <div><strong>Distance from start:</strong> {selectedStation.distanceFromStart}km</div>
+                  {selectedStation.detourDistance && selectedStation.detourDistance > 0 && (
+                    <div style={{ color: "#ea4335", fontWeight: "500" }}>
+                      <strong>Extra distance:</strong> +{selectedStation.detourDistance}km detour
+                    </div>
+                  )}
+                  {selectedStation.rejoinDetour && selectedStation.rejoinDetour > 0 && (
+                    <div style={{ color: "#f59e0b", fontWeight: "500" }}>
+                      <strong>Route rejoin detour:</strong> +{selectedStation.rejoinDetour}km
+                    </div>
+                  )}
                   <div><strong>Range at destination:</strong> {selectedStation.remainingRangeAtDestination}km</div>
                   {selectedStation.usageCost && (
                     <div style={{ 
@@ -1089,6 +1122,16 @@ export default function MapWeb({
                 }}>
                   +{chargingStopInfo.routeDetails.totalTravelTime - chargingStopInfo.routeDetails.originalTravelTime} min longer than usual due to charging
                 </div>
+                
+                {chargingStopInfo.routeDetails.detourDistance > 0 && (
+                  <div style={{ 
+                    fontSize: "12px", 
+                    color: "#ea4335",
+                    marginTop: "2px"
+                  }}>
+                    +{chargingStopInfo.routeDetails.detourDistance}km total detour from direct route
+                  </div>
+                )}
               </div>
 
               {/* Route Steps - Google Maps style */}
@@ -1138,12 +1181,16 @@ export default function MapWeb({
                       color: "#5f6368" 
                     }}>
                       {chargingStopInfo.routeDetails.timeToStation} min • {chargingStopInfo.routeDetails.originalDistance || distance} km
-                      {chargingStopInfo.routeDetails.detourDistance > 0 && (
-                        <span style={{ color: "#ea4335" }}>
-                          • +{chargingStopInfo.routeDetails.detourDistance}km detour
-                        </span>
-                      )}
                     </div>
+                    {chargingStopInfo.routeDetails.detourDistance > 0 && (
+                      <div style={{ 
+                        fontSize: "12px", 
+                        color: "#ea4335",
+                        marginTop: "2px"
+                      }}>
+                        +{chargingStopInfo.routeDetails.detourDistance}km detour
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1374,62 +1421,85 @@ export default function MapWeb({
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
         }
+        @keyframes slideInFromRight {
+          0% { 
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          100% { 
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
       `}</style>
 
-      {/* Backend Error Popup */}
+      {/* Backend Error */}
       {backendError && (
         <div
           style={{
             position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100%",
-            height: "100%",
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            backgroundColor: "#fff",
+            padding: "12px 16px",
+            borderRadius: "8px",
+            boxShadow: "0 2px 12px rgba(0,0,0,0.1)",
+            border: "1px solid #f0f0f0",
             display: "flex",
-            justifyContent: "center",
             alignItems: "center",
+            gap: "12px",
             zIndex: 9999,
+            fontFamily: "'Google Sans', Roboto, Arial, sans-serif",
+            fontSize: "14px",
+            maxWidth: "320px",
           }}
         >
           <div
             style={{
-              backgroundColor: "#fff",
-              padding: "24px",
-              borderRadius: "12px",
-              boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
-              maxWidth: "400px",
-              margin: "20px",
-              textAlign: "center",
+              width: "4px",
+              height: "32px",
+              backgroundColor: "#ff6b6b",
+              borderRadius: "2px",
+              flexShrink: 0,
+            }}
+          />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: "500", color: "#333", marginBottom: "2px" }}>
+              Backend Offline
+            </div>
+            <div style={{ color: "#666", fontSize: "12px" }}>
+              Charging stations unavailable
+            </div>
+          </div>
+          <button
+            onClick={() => setBackendError(false)}
+            style={{
+              background: "none",
+              border: "none",
+              color: "#999",
+              cursor: "pointer",
+              fontSize: "16px",
+              padding: "4px",
+              borderRadius: "4px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "24px",
+              height: "24px",
+              transition: "all 0.2s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "#f5f5f5";
+              e.currentTarget.style.color = "#333";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "transparent";
+              e.currentTarget.style.color = "#999";
             }}
           >
-            <h3
-              style={{
-                color: "#d32f2f",
-                marginBottom: "16px",
-                fontWeight: "bold",
-              }}
-            >
-              Backend Not Running
-            </h3>
-            <p style={{ marginBottom: "20px", color: "#666" }}>
-              Backend is not running, no charging locations will be fetched.
-            </p>
-            <button
-              onClick={() => setBackendError(false)}
-              style={{
-                backgroundColor: "#1976d2",
-                color: "#fff",
-                border: "none",
-                padding: "8px 16px",
-                borderRadius: "6px",
-                cursor: "pointer",
-                fontSize: "14px",
-              }}
-            >
-              Dismiss
-            </button>
-          </div>
+            ×
+          </button>
         </div>
       )}
     </div>

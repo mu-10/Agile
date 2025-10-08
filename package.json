@@ -10,8 +10,8 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "test": "jest",
-    "migrate": "node migrate.js",
-    "db:migrate": "node migrate.js",
+    "migrate": "node database/migrate.js",
+    "db:migrate": "node database/migrate.js",
     "server": "set USE_DATABASE=true&& node server.js",
     "server:api": "set USE_DATABASE=false&& node server.js",
     "server:db": "set USE_DATABASE=true&& node server.js"

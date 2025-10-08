@@ -1,12 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import {
-    Platform,
-    Pressable,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 import MapWeb from "../components/Map.web";
 
@@ -108,13 +108,6 @@ export default function Index() {
     setPlannedOriginPlaceId(originPlaceId);
     setPlannedDestinationPlaceId(destinationPlaceId);
     setPlannedRange(Number(batteryRange));
-
-    console.log("Planned route:", {
-      start: startCoords || startInput,
-      end,
-      batteryRange,
-      batteryCapacity,
-    });
   };
 
   // Fill input with current location on button press
@@ -136,12 +129,15 @@ export default function Index() {
         // Always set the actual address from reverse geocoding
         setStartInput(json.results[0].formatted_address);
       } else {
-        // Fallback to coordinates if no address found
-        setStartInput(`${loc.lat},${loc.lng}`);
+        // Try to get a simpler address format if the first one fails
+        const simpleAddress = `${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}`;
+        setStartInput(simpleAddress);
       }
     } catch (err) {
       console.error("Reverse geocoding failed:", err);
-      setStartInput(`${loc.lat},${loc.lng}`);
+      // Use a more readable format for coordinates as fallback
+      const simpleAddress = `${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}`;
+      setStartInput(simpleAddress);
     }
   };
 
@@ -393,6 +389,7 @@ export default function Index() {
           batteryCapacity={Number(batteryCapacity) || 0}
           onLocationChange={(loc) => setCurrentLocation(loc)}
           onMapsReady={() => setIsMapsReady(true)}
+          showRecommendedLocations={!!(plannedStart && plannedEnd)} // only show when a route is planned
         />
       </View>
     </View>
