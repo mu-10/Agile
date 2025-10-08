@@ -1,14 +1,15 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import {
-    Platform,
-    Pressable,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 import MapWeb from "../components/Map.web";
+import { useDarkMode } from "./useDarkMode";
 
 export default function Index() {
   // Input states
@@ -19,6 +20,8 @@ export default function Index() {
   const [batteryCapacity, setBatteryCapacity] = useState<string>("");
   const [rangeError, setRangeError] = useState<string>("");
   const [capacityError, setCapacityError] = useState<string>("");
+
+  const darkMode = useDarkMode();
 
   // Places Autocomplete predictions
   const [startPredictions, setStartPredictions] = useState<
@@ -204,22 +207,27 @@ export default function Index() {
   };
 
   return (
-    <View style={{ flex: 1 }}>
-      {/* Toolbar */}
-      <View style={styles.toolbar}>
+    <View style={{ flex: 1, backgroundColor: darkMode ? "#18181b" : "#fff" }}>
+      <View style={[
+        styles.toolbar,
+        darkMode && { backgroundColor: "#27272a" }
+      ]}>
         <Ionicons
           name="navigate-outline"
           size={18}
-          color="#9ca3af"
+          color={darkMode ? "#d1d5db" : "#9ca3af"}
           style={styles.icon}
         />
-
         {/* From input with location button */}
         <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
           <TextInput
-            style={[styles.input, { flex: 1 }]}
+            style={[
+              styles.input,
+              { flex: 1 },
+              darkMode && { backgroundColor: "#27272a", color: "#d1d5db" },
+            ]}
             placeholder="From"
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={darkMode ? "#6b7280" : "#9ca3af"}
             value={startInput}
             onChangeText={(val) => {
               setStartInput(val);
@@ -257,9 +265,12 @@ export default function Index() {
 
         {/* To input */}
         <TextInput
-          style={styles.input}
+          style={[
+            styles.input,
+            darkMode && { backgroundColor: "#27272a", color: "#d1d5db" },
+          ]}
           placeholder="To"
-          placeholderTextColor="#9ca3af"
+          placeholderTextColor={darkMode ? "#6b7280" : "#9ca3af"}
           value={end}
           onChangeText={(val) => {
             setEnd(val);
@@ -281,9 +292,12 @@ export default function Index() {
 
         {/* Battery range */}
         <TextInput
-          style={styles.input}
+          style={[
+            styles.input,
+            darkMode && { backgroundColor: "#27272a", color: "#d1d5db" },
+          ]}
           placeholder="Range km"
-          placeholderTextColor="#9ca3af"
+          placeholderTextColor={darkMode ? "#6b7280" : "#9ca3af"}
           value={batteryRange}
           keyboardType="numeric"
           onChangeText={handleRangeChange}
@@ -293,9 +307,12 @@ export default function Index() {
 
         {/* Battery capacity */}
         <TextInput
-          style={styles.input}
+          style={[
+            styles.input,
+            darkMode && { backgroundColor: "#27272a", color: "#d1d5db" },
+          ]}
           placeholder="Capacity km"
-          placeholderTextColor="#9ca3af"
+          placeholderTextColor={darkMode ? "#6b7280" : "#9ca3af"}
           value={batteryCapacity}
           keyboardType="numeric"
           onChangeText={handleCapacityChange}
@@ -327,53 +344,53 @@ export default function Index() {
 
       {/* Suggestions dropdowns (web only) - only render if showing predictions */}
       {Platform.OS === "web" && ((showStartPreds && startInput.length > 0) || (showEndPreds && end.length > 0)) ? (
-        <View style={styles.suggestionsContainer}>
+        <View style={[styles.suggestionsContainer, darkMode && { backgroundColor: "#18181b" }]}> 
           {showStartPreds && startInput.length > 0 && (
-            <View style={styles.suggestionsList}>
+            <View style={[styles.suggestionsList, darkMode && { backgroundColor: "#27272a", borderColor: "#444" }]}> 
               {startInput.length > 0 ? (
                 startPredictions.length > 0 ? (
                   startPredictions.slice(0, 8).map((p) => (
                     <Pressable
                       key={p.place_id}
                       onPress={() => pickPrediction(p, "start")}
-                      style={styles.suggestionItem}
+                      style={[styles.suggestionItem, darkMode && { backgroundColor: "#27272a" }]}
                     >
                       <Ionicons
                         name="location-outline"
                         size={14}
-                        color="#6b7280"
+                        color={darkMode ? "#d1d5db" : "#6b7280"}
                         style={{ marginRight: 6 }}
                       />
-                      <Text style={styles.suggestionText}>{p.description}</Text>
+                      <Text style={[styles.suggestionText, darkMode && { color: "#d1d5db" }]}>{p.description}</Text>
                     </Pressable>
                   ))
                 ) : (
-                  <Text style={{ padding: 10, color: "#888" }}>No address found</Text>
+                  <Text style={{ padding: 10, color: darkMode ? "#888" : "#888" }}>No address found</Text>
                 )
               ) : null}
             </View>
           )}
           {showEndPreds && end.length > 0 && (
-            <View style={styles.suggestionsList}>
+            <View style={[styles.suggestionsList, darkMode && { backgroundColor: "#27272a", borderColor: "#444" }]}> 
               {end.length > 0 ? (
                 endPredictions.length > 0 ? (
                   endPredictions.slice(0, 8).map((p) => (
                     <Pressable
                       key={p.place_id}
                       onPress={() => pickPrediction(p, "end")}
-                      style={styles.suggestionItem}
+                      style={[styles.suggestionItem, darkMode && { backgroundColor: "#27272a" }]}
                     >
                       <Ionicons
                         name="location-outline"
                         size={14}
-                        color="#6b7280"
+                        color={darkMode ? "#d1d5db" : "#6b7280"}
                         style={{ marginRight: 6 }}
                       />
-                      <Text style={styles.suggestionText}>{p.description}</Text>
+                      <Text style={[styles.suggestionText, darkMode && { color: "#d1d5db" }]}>{p.description}</Text>
                     </Pressable>
                   ))
                 ) : (
-                  <Text style={{ padding: 10, color: "#888" }}>No address found</Text>
+                  <Text style={{ padding: 10, color: darkMode ? "#888" : "#888" }}>No address found</Text>
                 )
               ) : null}
             </View>
