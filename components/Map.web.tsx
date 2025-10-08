@@ -110,7 +110,7 @@ export default function MapWeb({
   ) => {
     setLoadingChargingStop(true);
     try {
-      const response = await fetch('http://localhost:3001/api/find-charging-stop', {
+  const response = await fetch('http://localhost:4000/api/find-charging-stop', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -134,6 +134,7 @@ export default function MapWeb({
       setChargingStopInfo(data);
       
       if (data.needsCharging && data.chargingStation) {
+        console.log("🔍 Charging station data:", data.chargingStation);
         setAutoSelectedChargingStation(data.chargingStation);
         setAlternativeStations(data.alternatives || []);
         setShowChargingRoute(true);
@@ -434,7 +435,7 @@ export default function MapWeb({
 
       try {
         const response = await fetch(
-          `http://localhost:3001/api/charging-stations?${params}`
+          `http://localhost:4000/api/charging-stations?${params}`
         );
 
         // Check if the request was successful
@@ -652,16 +653,27 @@ export default function MapWeb({
           if (routeDistance > batteryRange && batteryRange > 0) {
             
             // Need charging - find optimal charging station
-            const startCoords = parseLatLng(start) || (typeof origin === 'object' && 'lat' in origin ? origin : null);
+            let startCoords = parseLatLng(start) || (typeof origin === 'object' && 'lat' in origin ? origin : null);
             let endCoords = parseLatLng(end) || (typeof destination === 'object' && 'lat' in destination ? destination : null);
             
-            // If we don't have end coordinates but we have the route result, extract them from the route
-            if (!endCoords && result && result.routes[0] && result.routes[0].legs[0]) {
-              const endLocation = result.routes[0].legs[0].end_location;
-              endCoords = {
-                lat: endLocation.lat(),
-                lng: endLocation.lng()
-              };
+            // If we don't have coordinates, extract them from the route result (for manual addresses)
+            if (result && result.routes[0] && result.routes[0].legs[0]) {
+              if (!startCoords) {
+                const startLocation = result.routes[0].legs[0].start_location;
+                startCoords = {
+                  lat: startLocation.lat(),
+                  lng: startLocation.lng()
+                };
+              }
+              
+              if (!endCoords) {
+                const endLocation = result.routes[0].legs[0].end_location;
+                endCoords = {
+                  lat: endLocation.lat(),
+                  lng: endLocation.lng()
+                };
+              }
+            }
             }
             
             if (startCoords && endCoords) {
@@ -698,7 +710,7 @@ export default function MapWeb({
         }
       }
     );
-  }, [isLoaded, start, end, originPlaceId, destinationPlaceId, parseLatLng]);
+  }, [isLoaded, start, end, originPlaceId, destinationPlaceId, batteryRange, parseLatLng]);
 
   // Battery range check
   const exceedsRange =
@@ -739,7 +751,7 @@ export default function MapWeb({
       const startLocation = route.legs[0].start_location;
       const endLocation = route.legs[route.legs.length - 1].end_location;
       
-      const response = await fetch('http://localhost:3001/api/find-charging-stop', {
+  const response = await fetch('http://localhost:4000/api/find-charging-stop', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1216,7 +1228,7 @@ export default function MapWeb({
                   color: chargingStopInfo.manuallySelected ? "#1976d2" : "#ea4335", 
                   marginBottom: "4px" 
                 }}>
-                  ⚡ Fastest route with charging • via {autoSelectedChargingStation?.title}
+                  ⚡ Fastest route with charging • via {autoSelectedChargingStation?.title || autoSelectedChargingStation?.name || 'charging station'}
                 </div>
                 
                 <div style={{ 

@@ -228,8 +228,10 @@ app.post("/api/validate-station-reachability", async (req, res) => {
   }
 });
 
-const server = app.listen(3001, () => {
-  console.log(`Backend running on http://localhost:3001`);
+const PORT = process.env.PORT || 3001;
+
+const server = app.listen(PORT, () => {
+  console.log(`Backend running on http://localhost:${PORT}`);
   if (db) {
     console.log(`Database ready with ${db.getStationCount()} stations available`);
   } else {
