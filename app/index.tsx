@@ -1,14 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import {
-    Platform,
-    Pressable,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 import MapWeb from "../components/Map.web";
+import vehiclesData from "../data/vehicles.json";
 
 export default function Index() {
   // Input states
@@ -19,6 +21,12 @@ export default function Index() {
   const [batteryCapacity, setBatteryCapacity] = useState<string>("");
   const [rangeError, setRangeError] = useState<string>("");
   const [capacityError, setCapacityError] = useState<string>("");
+
+  // Vehicle selection states
+  const [vehicleSearch, setVehicleSearch] = useState<string>("");
+  const [selectedVehicle, setSelectedVehicle] = useState<any>(null);
+  const [vehiclePredictions, setVehiclePredictions] = useState<any[]>([]);
+  const [showVehiclePreds, setShowVehiclePreds] = useState<boolean>(false);
 
   // Places Autocomplete predictions
   const [startPredictions, setStartPredictions] = useState<
@@ -65,10 +73,10 @@ export default function Index() {
     const numericValue = text.replace(/[^0-9]/g, "");
     if (batteryCapacity && Number(numericValue) > Number(batteryCapacity)) {
       setBatteryRange(batteryCapacity);
-      setRangeError("Range cannot exceed capacity");
+      setRangeError("Current range cannot exceed max range");
     } else {
       setBatteryRange(numericValue);
-      setRangeError(numericValue === "" ? "Range must be a number" : "");
+      setRangeError(numericValue === "" ? "Current range must be a number" : "");
     }
   };
 
@@ -77,9 +85,9 @@ export default function Index() {
     const numericValue = text.replace(/[^0-9]/g, "");
     setBatteryCapacity(numericValue);
     if (numericValue === "") {
-      setCapacityError("Capacity must be a number");
+      setCapacityError("Max range must be a number");
     } else if (Number(numericValue) > 1000) {
-      setCapacityError("Please enter a valid capacity.");
+      setCapacityError("Please enter a valid max range.");
     } else {
       setCapacityError("");
     }
@@ -89,13 +97,13 @@ export default function Index() {
   const onPlan = () => {
     let valid = true;
     if (!batteryRange || isNaN(Number(batteryRange))) {
-      setRangeError("Please enter a valid number for battery range");
+      setRangeError("Please enter a valid number for current range");
       valid = false;
     } else {
       setRangeError("");
     }
     if (!batteryCapacity || isNaN(Number(batteryCapacity)) || Number(batteryCapacity) > 1000) {
-      setCapacityError(!batteryCapacity || isNaN(Number(batteryCapacity)) ? "Please enter a valid number for capacity" : "Please enter a valid capacity.");
+      setCapacityError(!batteryCapacity || isNaN(Number(batteryCapacity)) ? "Please enter a valid number for max range" : "Please enter a valid max range.");
       valid = false;
     } else {
       setCapacityError("");
@@ -203,6 +211,44 @@ export default function Index() {
     }
   };
 
+  // Vehicle search functionality
+  const searchVehicles = (searchText: string) => {
+    if (!searchText || searchText.length < 2) {
+      setVehiclePredictions([]);
+      return;
+    }
+    
+    const filtered = vehiclesData.filter((vehicle: any) => {
+      const fullName = `${vehicle.brand} ${vehicle.model}`;
+      return fullName.toLowerCase().includes(searchText.toLowerCase());
+    }).slice(0, 10); // Limit to 10 results
+    
+    setVehiclePredictions(filtered);
+  };
+
+  const handleVehicleSearchChange = (text: string) => {
+    setVehicleSearch(text);
+    setShowVehiclePreds(true);
+    searchVehicles(text);
+    
+    // If text is cleared, also clear the selected vehicle
+    if (!text) {
+      setSelectedVehicle(null);
+    }
+  };
+
+  const selectVehicle = (vehicle: any) => {
+    const vehicleName = `${vehicle.brand} ${vehicle.model}`;
+    setVehicleSearch(vehicleName);
+    setSelectedVehicle(vehicle);
+    setShowVehiclePreds(false);
+    setVehiclePredictions([]);
+    
+    // Auto-fill the max range from vehicle data
+    setBatteryCapacity(vehicle.range_km.toString());
+    setCapacityError(""); // Clear any existing capacity error
+  };
+
   return (
     <View style={{ flex: 1 }}>
       {/* Toolbar */}
@@ -279,10 +325,10 @@ export default function Index() {
 
         <View style={styles.divider} />
 
-        {/* Battery range */}
+        {/* Current battery range */}
         <TextInput
           style={styles.input}
-          placeholder="Range km"
+          placeholder="Current range (km left)"
           placeholderTextColor="#9ca3af"
           value={batteryRange}
           keyboardType="numeric"
@@ -291,10 +337,26 @@ export default function Index() {
 
         <View style={styles.divider} />
 
-        {/* Battery capacity */}
+        {/* Vehicle selector */}
         <TextInput
           style={styles.input}
-          placeholder="Capacity km"
+          placeholder="Select vehicle model (optional)"
+          placeholderTextColor="#9ca3af"
+          value={vehicleSearch}
+          onChangeText={handleVehicleSearchChange}
+          onFocus={() => setShowVehiclePreds(true)}
+          onBlur={() => {
+            // Delay hiding to allow for selection
+            setTimeout(() => setShowVehiclePreds(false), 150);
+          }}
+        />
+
+        <View style={styles.divider} />
+
+        {/* Max range */}
+        <TextInput
+          style={styles.input}
+          placeholder="Max range (km when full)"
           placeholderTextColor="#9ca3af"
           value={batteryCapacity}
           keyboardType="numeric"
@@ -380,6 +442,28 @@ export default function Index() {
           )}
         </View>
       ) : null}
+
+      {/* Vehicle predictions dropdown */}
+      {showVehiclePreds && vehiclePredictions.length > 0 && (
+        <View style={styles.vehicleDropdownContainer}>
+          <ScrollView style={styles.vehicleDropdown} showsVerticalScrollIndicator={false}>
+            {vehiclePredictions.map((vehicle: any, index: number) => (
+              <Pressable
+                key={index}
+                style={styles.vehiclePredictionItem}
+                onPress={() => selectVehicle(vehicle)}
+              >
+                <Text style={styles.predictionText}>
+                  {vehicle.brand} {vehicle.model}
+                </Text>
+                <Text style={styles.predictionSubtext}>
+                  {vehicle.range_km} km max range • {vehicle.battery_capacity_kWh} kWh
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      )}
 
   {/* Always show a solid grey divider between input fields and map */}
   <View style={{ width: "100%", backgroundColor: "#f3f4f6", height: 8 }} />
@@ -478,5 +562,67 @@ const styles = StyleSheet.create({
   suggestionText: {
     fontSize: 14,
     color: "#111827",
+  },
+  inputContainer: {
+    position: "relative",
+    flex: 1,
+    zIndex: 10000,
+  },
+  predictionsContainer: {
+    position: "absolute",
+    top: "100%",
+    left: 0,
+    right: 0,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    marginTop: 2,
+    maxHeight: 200,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "#e5e7eb",
+    zIndex: 10001,
+  },
+  predictionItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#f3f4f6",
+  },
+  predictionText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#111827",
+    marginBottom: 2,
+  },
+  predictionSubtext: {
+    fontSize: 12,
+    color: "#6b7280",
+  },
+  vehicleDropdownContainer: {
+    position: "absolute",
+    left: 12,
+    right: 12,
+    top: 70, // Position below the toolbar
+    zIndex: 99999,
+  },
+  vehicleDropdown: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    maxHeight: 200,
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 15,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "#e5e7eb",
+  },
+  vehiclePredictionItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#f3f4f6",
   },
 });

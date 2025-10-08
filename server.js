@@ -425,8 +425,10 @@ app.post("/api/find-charging-stop", async (req, res) => {
   }
 });
 
-const server = app.listen(3001, () => {
-  console.log(`Backend running on http://localhost:3001 - Mode: ${USE_DATABASE ? 'Database' : 'API'}`);
+const PORT = process.env.PORT || 4000;
+
+const server = app.listen(PORT, () => {
+  console.log(`Backend running on http://localhost:${PORT} - Mode: ${USE_DATABASE ? 'Database' : 'API'}`);
   if (USE_DATABASE && db) {
     console.log(`Database ready with ${db.getStationCount()} stations available`);
   }

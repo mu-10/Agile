@@ -109,7 +109,7 @@ export default function MapWeb({
   ) => {
     setLoadingChargingStop(true);
     try {
-      const response = await fetch('http://localhost:3001/api/find-charging-stop', {
+  const response = await fetch('http://localhost:4000/api/find-charging-stop', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -289,7 +289,7 @@ export default function MapWeb({
 
       try {
         const response = await fetch(
-          `http://localhost:3001/api/charging-stations?${params}`
+          `http://localhost:4000/api/charging-stations?${params}`
         );
 
         // Check if the request was successful
@@ -613,7 +613,7 @@ export default function MapWeb({
       const startLocation = route.legs[0].start_location;
       const endLocation = route.legs[route.legs.length - 1].end_location;
       
-      const response = await fetch('http://localhost:3001/api/find-charging-stop', {
+  const response = await fetch('http://localhost:4000/api/find-charging-stop', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
