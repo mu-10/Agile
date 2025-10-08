@@ -57,6 +57,7 @@ CREATE TABLE charging_stations (
   number_of_points INTEGER,
   status_type TEXT,
   operator TEXT,
+  usage_cost TEXT,
   connections TEXT, -- JSON
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
