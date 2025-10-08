@@ -1,4 +1,5 @@
 require('dotenv').config({ quiet: true });
+const config = require('./config');
 const express = require("express");
 const cors = require("cors");
 const ChargingStationDB = require('./services/databaseService');
@@ -133,7 +134,7 @@ app.post("/api/find-charging-stop", async (req, res) => {
         });
       }
     } catch (dbError) {
-      console.error("❌ Database query failed:", dbError);
+      console.error("Database query failed:", dbError);
       return res.status(500).json({
         error: "Database query failed",
         message: "Failed to retrieve charging station data from database. Please ensure the database is properly set up.",
@@ -148,7 +149,7 @@ app.post("/api/find-charging-stop", async (req, res) => {
       batteryRange,             // string/number
       batteryCapacity,          // string/number  
       stations,                 // array of stations
-      process.env.GOOGLE_MAPS_API_KEY
+      config.external.googleMapsApiKey
     );
     
     // Transform the response to match frontend expectations
@@ -201,7 +202,7 @@ app.post("/api/validate-station-reachability", async (req, res) => {
       startLng, 
       stationLat, 
       stationLng, 
-      process.env.EXPO_PUBLIC_MAPS_WEB_KEY
+      config.external.googleMapsApiKey
     );
 
     // Reserve 20% battery for safety margin (use 80% of battery range)
@@ -228,10 +229,8 @@ app.post("/api/validate-station-reachability", async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3001;
-
-const server = app.listen(PORT, () => {
-  console.log(`Backend running on http://localhost:${PORT}`);
+const server = app.listen(config.server.port, () => {
+  console.log(`Backend running on ${config.server.getUrl()}`);
   if (db) {
     console.log(`Database ready with ${db.getStationCount()} stations available`);
   } else {

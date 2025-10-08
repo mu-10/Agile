@@ -6,6 +6,7 @@ import {
   useJsApiLoader,
 } from "@react-google-maps/api";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { API_ENDPOINTS, DEFAULTS, MAPS_CONFIG, UI_CONFIG } from "../config/appConfig";
 
 // Add CSS animation for loading spinner
 if (typeof document !== 'undefined') {
@@ -35,7 +36,7 @@ type Props = {
 const chargingIcon = "https://maps.google.com/mapfiles/ms/icons/green-dot.png";
 
 // Move libraries outside component to avoid reload warning
-const GOOGLE_MAPS_LIBRARIES: ("places" | "geometry")[] = ["places", "geometry"];
+const GOOGLE_MAPS_LIBRARIES = MAPS_CONFIG.libraries as unknown as ("places" | "geometry")[];
 
 export default function MapWeb({
   onLocationChange,
@@ -110,7 +111,7 @@ export default function MapWeb({
   ) => {
     setLoadingChargingStop(true);
     try {
-  const response = await fetch('http://localhost:4000/api/find-charging-stop', {
+      const response = await fetch(API_ENDPOINTS.findChargingStop(), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -280,7 +281,7 @@ export default function MapWeb({
       }
       
       // Call backend to validate reachability with actual route calculation
-      const response = await fetch('http://localhost:3001/api/validate-station-reachability', {
+      const response = await fetch(API_ENDPOINTS.validateStationReachability(), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -388,15 +389,14 @@ export default function MapWeb({
       return stations;
     }
     
-    // Route exists - show stations within 2km of route
-    const MAX_DISTANCE_METERS = 2000; // 2km
+    // Route exists - show stations within configured distance of route
     const filtered = stations.filter((station) => {
       const distance = getDistanceToRoute(
         station.latitude,
         station.longitude,
         directionsResponse
       );
-      return distance <= MAX_DISTANCE_METERS;
+      return distance <= DEFAULTS.maxStationDistance;
     });
     return filtered;
   }
@@ -415,14 +415,11 @@ export default function MapWeb({
       let maxResults;
       
       if (zoomLevel <= 8) {
-        // Very zoomed out - request more stations for country/region view
-        maxResults = "5000";
+        maxResults = UI_CONFIG.maxStationsPerRequest.zoomedOut.toString();
       } else if (zoomLevel <= 10) {
-        // Medium zoom - request moderate amount for state/province view  
-        maxResults = "2000";
+        maxResults = UI_CONFIG.maxStationsPerRequest.medium.toString();
       } else {
-        // Zoomed in - request fewer stations for city/local view
-        maxResults = "1000";
+        maxResults = UI_CONFIG.maxStationsPerRequest.zoomedIn.toString();
       }
 
       const params = new URLSearchParams({
@@ -435,7 +432,7 @@ export default function MapWeb({
 
       try {
         const response = await fetch(
-          `http://localhost:4000/api/charging-stations?${params}`
+          API_ENDPOINTS.chargingStations() + `?${params}`
         );
 
         // Check if the request was successful
@@ -525,10 +522,10 @@ export default function MapWeb({
         clearTimeout(debouncedFetchStations.current);
       }
 
-      // Set new timeout - always fetch on bounds change for optimal performance
+      // Set new timeout - use configured debounce delay
       debouncedFetchStations.current = setTimeout(() => {
         fetchStations(map);
-      }, 300) as unknown as number; // Reduced timeout for more responsive updates
+      }, UI_CONFIG.debounceDelay) as unknown as number;
     }
   }, [map, fetchStations]);
 
@@ -557,7 +554,7 @@ export default function MapWeb({
         },
         (err) => {
           console.error("Error getting location:", err);
-          const fallback = { lat: 57.7089, lng: 11.9746 };
+          const fallback = MAPS_CONFIG.defaultCenter;
           setCurrentLocation(fallback);
           onLocationChange(fallback);
 
@@ -568,7 +565,7 @@ export default function MapWeb({
       );
     } else {
       console.error("Geolocation not supported");
-      const fallback = { lat: 57.7089, lng: 11.9746 };
+      const fallback = MAPS_CONFIG.defaultCenter;
       setCurrentLocation(fallback);
       onLocationChange(fallback);
 
@@ -674,7 +671,6 @@ export default function MapWeb({
                 };
               }
             }
-            }
             
             if (startCoords && endCoords) {
               // Store the original full route for station filtering
@@ -703,14 +699,14 @@ export default function MapWeb({
             setChargingRouteResponse(null);
           }
         } else {
-          console.error("Directions request failed:", status, result);
+          console.error("Directions request failed:", status);
           setDirectionsResponse(null);
           setDistance(null);
           setDuration(null);
         }
       }
     );
-  }, [isLoaded, start, end, originPlaceId, destinationPlaceId, batteryRange, parseLatLng]);
+  }, [isLoaded, start, end, originPlaceId, destinationPlaceId, batteryRange, parseLatLng, findChargingStop]);
 
   // Battery range check
   const exceedsRange =
@@ -751,7 +747,7 @@ export default function MapWeb({
       const startLocation = route.legs[0].start_location;
       const endLocation = route.legs[route.legs.length - 1].end_location;
       
-  const response = await fetch('http://localhost:4000/api/find-charging-stop', {
+  const response = await fetch(API_ENDPOINTS.findChargingStop(), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -884,7 +880,7 @@ export default function MapWeb({
     <div style={{ width: "100%", height: "100vh", position: "relative" }}>
       <GoogleMap
         center={initialCenter.current} //  only set once
-        zoom={12}
+        zoom={MAPS_CONFIG.defaultZoom}
         mapContainerStyle={{ width: "100%", height: "100%" }}
         options={{ streetViewControl: false, mapTypeControl: false }}
         onLoad={onLoad}
