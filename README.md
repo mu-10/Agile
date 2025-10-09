@@ -14,7 +14,6 @@ A project made for course DAT257 Agile software project management.
 2. Start the backend:
 
    ```bash
-   # Start backend
    npm run server
    ```
 
