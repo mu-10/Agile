@@ -1264,7 +1264,7 @@ export default function MapWeb({
           {/* Charging route information */}
           {showChargingRoute && chargingStopInfo?.routeDetails && (
             <div>
-              {/* Total Trip Summary - Google Maps style */}
+              {/* Total Trip Summary*/}
               <div style={{ marginBottom: "16px" }}>
                 <div style={{ 
                   display: "flex", 
