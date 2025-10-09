@@ -3,7 +3,26 @@ const fetch = require('node-fetch');
 const path = require('path');
 
 class ChargingStationDB {
-  constructor(dbPath = './charging_stations.db') {
+  getAllConnectorTypes() {
+    const query = `SELECT connections FROM charging_stations`;
+    const stmt = this.db.prepare(query);
+    const rows = stmt.all();
+    const typesSet = new Set();
+    rows.forEach(row => {
+      if (row.connections) {
+        try {
+          const connections = JSON.parse(row.connections);
+          connections.forEach(conn => {
+            if (conn.ConnectionType && conn.ConnectionType.Title) {
+              typesSet.add(conn.ConnectionType.Title);
+            }
+          });
+        } catch {}
+      }
+    });
+    return Array.from(typesSet);
+  }
+  constructor(dbPath = path.join(__dirname, '../data/charging_stations.db')) {
     this.db = new Database(dbPath, { verbose: null });
     this.initializeDatabase();
   }
