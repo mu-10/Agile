@@ -1,9 +1,9 @@
 import {
-  DirectionsRenderer,
-  GoogleMap,
-  InfoWindow,
-  Marker,
-  useJsApiLoader,
+    DirectionsRenderer,
+    GoogleMap,
+    InfoWindow,
+    Marker,
+    useJsApiLoader,
 } from "@react-google-maps/api";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { API_ENDPOINTS, DEFAULTS, MAPS_CONFIG, UI_CONFIG } from "../config/appConfig";
@@ -109,33 +109,49 @@ export default function MapWeb({
     startCoords: google.maps.LatLngLiteral,
     endCoords: google.maps.LatLngLiteral
   ) => {
+    console.log("🔍 findChargingStop called with:");
+    console.log("- Start:", startCoords);
+    console.log("- End:", endCoords);
+    console.log("- Battery Range:", batteryRange, "km");
+    console.log("- Battery Capacity:", batteryCapacity, "kWh");
+    
     setLoadingChargingStop(true);
     try {
+      const requestBody = {
+        startLat: startCoords.lat,
+        startLng: startCoords.lng,
+        endLat: endCoords.lat,
+        endLng: endCoords.lng,
+        batteryRange,
+        batteryCapacity,
+        currentBatteryPercent: 100 // Assume full battery at start
+      };
+      
+      console.log("📡 Making request to:", API_ENDPOINTS.findChargingStop());
+      console.log("📦 Request body:", requestBody);
+      
       const response = await fetch(API_ENDPOINTS.findChargingStop(), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          startLat: startCoords.lat,
-          startLng: startCoords.lng,
-          endLat: endCoords.lat,
-          endLng: endCoords.lng,
-          batteryRange,
-          batteryCapacity,
-          currentBatteryPercent: 100 // Assume full battery at start
-        }),
+        body: JSON.stringify(requestBody),
       });
 
+      console.log("📨 Response status:", response.status, response.statusText);
+
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        console.error("❌ Server error response:", errorText);
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
+      console.log("📥 Server response:", data);
       setChargingStopInfo(data);
       
       if (data.needsCharging && data.chargingStation) {
-        console.log("🔍 Charging station data:", data.chargingStation);
+        console.log("Charging station data:", data.chargingStation);
         setAutoSelectedChargingStation(data.chargingStation);
         setAlternativeStations(data.alternatives || []);
         setShowChargingRoute(true);
@@ -237,6 +253,8 @@ export default function MapWeb({
           originalTravelTime,
           totalDistanceViaStation: station.totalDistanceViaStation || ((legToStation.distance?.value || 0) + (legFromStation.distance?.value || 0)) / 1000,
           detourDistance: station.detourDistance || 0,
+          actualDetour: station.actualDetour || station.detourDistance || 0, // Use actualDetour if available
+          routingSuccess: station.routingSuccess || false,
           timeToStation: Math.round(timeToStation / 60),
           timeFromStation: Math.round(timeFromStation / 60),
           chargingTime: Math.round(chargingTime / 60),
@@ -1036,7 +1054,7 @@ export default function MapWeb({
           <Marker
             key={`recommended-${recommendedStation.id}`}
             position={{ lat: recommendedStation.latitude, lng: recommendedStation.longitude }}
-            title={`🔋 Recommended: ${recommendedStation.title}`}
+            title={`Recommended: ${recommendedStation.title}`}
             icon={{
               url: "https://maps.google.com/mapfiles/ms/icons/orange-dot.png",
               scaledSize: new window.google.maps.Size(48, 48),
@@ -1067,7 +1085,7 @@ export default function MapWeb({
                   fontWeight: "600",
                   color: "#dc2626"
                 }}>
-                  ⭐ Recommended Charging Station
+                  Recommended Charging Station
                 </div>
               )}
               
@@ -1115,9 +1133,17 @@ export default function MapWeb({
                   <div><strong>Max Power:</strong> {selectedStation.maxPowerKW}kW</div>
                   <div><strong>Est. Charging Time:</strong> {selectedStation.estimatedChargingTimeMinutes} min</div>
                   <div><strong>Distance from start:</strong> {selectedStation.distanceFromStart}km</div>
-                  {selectedStation.detourDistance && selectedStation.detourDistance > 0 && (
+                  {selectedStation.actualDetour !== undefined && selectedStation.actualDetour > 0 && (
                     <div style={{ color: "#ea4335", fontWeight: "500" }}>
-                      <strong>Extra distance:</strong> +{selectedStation.detourDistance}km detour
+                      <strong>Actual detour:</strong> +{selectedStation.actualDetour}km
+                      {selectedStation.routingSuccess === false && (
+                        <span style={{ fontSize: "10px", color: "#9ca3af", marginLeft: "4px" }}>(est.)</span>
+                      )}
+                    </div>
+                  )}
+                  {selectedStation.actualDetour !== undefined && selectedStation.actualDetour <= 0 && (
+                    <div style={{ color: "#10b981", fontWeight: "500" }}>
+                      <strong>Route efficiency:</strong> {selectedStation.actualDetour === 0 ? 'No detour' : `${Math.abs(selectedStation.actualDetour)}km shorter`}
                     </div>
                   )}
                   {selectedStation.rejoinDetour && selectedStation.rejoinDetour > 0 && (
@@ -1224,7 +1250,7 @@ export default function MapWeb({
                   color: chargingStopInfo.manuallySelected ? "#1976d2" : "#ea4335", 
                   marginBottom: "4px" 
                 }}>
-                  ⚡ Fastest route with charging • via {autoSelectedChargingStation?.title || autoSelectedChargingStation?.name || 'charging station'}
+                  Fastest route with charging • via {autoSelectedChargingStation?.title || autoSelectedChargingStation?.name || 'charging station'}
                 </div>
                 
                 <div style={{ 
@@ -1234,13 +1260,25 @@ export default function MapWeb({
                   +{chargingStopInfo.routeDetails.totalTravelTime - chargingStopInfo.routeDetails.originalTravelTime} min longer than usual due to charging
                 </div>
                 
-                {chargingStopInfo.routeDetails.detourDistance > 0 && (
+                {chargingStopInfo.routeDetails.actualDetour > 0 && (
                   <div style={{ 
                     fontSize: "12px", 
                     color: "#ea4335",
                     marginTop: "2px"
                   }}>
-                    +{chargingStopInfo.routeDetails.detourDistance}km total detour from direct route
+                    +{chargingStopInfo.routeDetails.actualDetour}km actual detour from planned route
+                    {chargingStopInfo.routeDetails.routingSuccess === false && (
+                      <span style={{ fontSize: "10px", color: "#9ca3af", marginLeft: "4px" }}>(estimated)</span>
+                    )}
+                  </div>
+                )}
+                {chargingStopInfo.routeDetails.actualDetour <= 0 && (
+                  <div style={{ 
+                    fontSize: "12px", 
+                    color: "#10b981",
+                    marginTop: "2px"
+                  }}>
+                    {chargingStopInfo.routeDetails.actualDetour === 0 ? 'No detour required' : `${Math.abs(chargingStopInfo.routeDetails.actualDetour)}km more efficient route`}
                   </div>
                 )}
               </div>
@@ -1293,13 +1331,25 @@ export default function MapWeb({
                     }}>
                       {chargingStopInfo.routeDetails.timeToStation} min • {chargingStopInfo.routeDetails.originalDistance || distance} km
                     </div>
-                    {chargingStopInfo.routeDetails.detourDistance > 0 && (
+                    {chargingStopInfo.routeDetails.actualDetour > 0 && (
                       <div style={{ 
                         fontSize: "12px", 
                         color: "#ea4335",
                         marginTop: "2px"
                       }}>
-                        +{chargingStopInfo.routeDetails.detourDistance}km detour
+                        +{chargingStopInfo.routeDetails.actualDetour}km actual detour
+                        {chargingStopInfo.routeDetails.routingSuccess === false && (
+                          <span style={{ fontSize: "10px", color: "#9ca3af", marginLeft: "4px" }}>(est.)</span>
+                        )}
+                      </div>
+                    )}
+                    {chargingStopInfo.routeDetails.actualDetour <= 0 && (
+                      <div style={{ 
+                        fontSize: "12px", 
+                        color: "#10b981",
+                        marginTop: "2px"
+                      }}>
+                        {chargingStopInfo.routeDetails.actualDetour === 0 ? 'No detour' : `${Math.abs(chargingStopInfo.routeDetails.actualDetour)}km shorter`}
                       </div>
                     )}
                   </div>

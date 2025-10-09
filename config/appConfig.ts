@@ -4,7 +4,7 @@
 export const APP_CONFIG = {
   // Server ports
   ports: {
-    backend: 8080,
+    backend: 4000, // Updated to match actual server port
     frontend: 3000,
     expo: 8081,
   },

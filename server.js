@@ -85,8 +85,11 @@ app.get("/api/charging-stations", async (req, res) => {
 // New endpoint for finding optimal charging station for a route
 app.post("/api/find-charging-stop", async (req, res) => {
   try {
+    console.log("🚀 /api/find-charging-stop called with body:", req.body);
+    
     // Check if database is available
     if (!db) {
+      console.log("❌ Database not available");
       return res.status(503).json({
         error: "Database not available",
         message: "The charging station database is not properly set up. Please run 'npm run migrate' to populate the database with charging station data.",
@@ -103,6 +106,11 @@ app.post("/api/find-charging-stop", async (req, res) => {
       batteryCapacity,
       currentBatteryPercent = 100
     } = req.body;
+    
+    console.log("📊 Parsed parameters:");
+    console.log(`- Route: ${startLat},${startLng} → ${endLat},${endLng}`);
+    console.log(`- Battery: ${batteryRange}km range, ${batteryCapacity}kWh capacity`);
+    console.log(`- Current charge: ${currentBatteryPercent}%`);
 
     // Validate required parameters
     if (!startLat || !startLng || !endLat || !endLng || !batteryRange || !batteryCapacity) {
@@ -125,6 +133,9 @@ app.post("/api/find-charging-stop", async (req, res) => {
       const west = Math.min(start.lng, end.lng) - bufferDegrees;
       
       stations = db.getStationsInBounds(north, south, east, west, 2000);
+      
+      console.log(`🏪 Found ${stations.length} stations in database for route area`);
+      console.log(`📍 Search bounds: N=${north.toFixed(4)}, S=${south.toFixed(4)}, E=${east.toFixed(4)}, W=${west.toFixed(4)}`);
       
       if (stations.length === 0) {
         return res.status(404).json({
