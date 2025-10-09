@@ -79,7 +79,10 @@ npm test
 Tests use Jest with React Testing Library and comprehensive mocks for Google Maps API.
 
 
-### Database Schema
+## Database
+This project uses SQLite as its database for storing charging station info from Open Charge Map.
+
+### Schema
 
 ```sql
 CREATE TABLE charging_stations (
