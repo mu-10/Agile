@@ -1,12 +1,14 @@
 import {
-    DirectionsRenderer,
-    GoogleMap,
-    InfoWindow,
-    Marker,
-    useJsApiLoader,
+  DirectionsRenderer,
+  GoogleMap,
+  InfoWindow,
+  Marker,
+  useJsApiLoader,
 } from "@react-google-maps/api";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { API_ENDPOINTS, DEFAULTS, MAPS_CONFIG, UI_CONFIG } from "../config/appConfig";
+import { connectorTypes as staticConnectorTypes } from "../services/stationConnectors";
+import ConnectorTypeDropdown from "./ConnectorTypeDropdown";
 
 // Add CSS animation for loading spinner
 if (typeof document !== 'undefined') {
@@ -49,6 +51,15 @@ export default function MapWeb({
   onMapsReady,
   showRecommendedLocations = true, // default to showing recommended locations
 }: Props) {
+  const [showConnectorDropdown, setShowConnectorDropdown] = useState(false);
+  const [connectorTypes] = useState<string[]>(staticConnectorTypes);
+  const [selectedConnectorTypes, setSelectedConnectorTypes] = useState<string[]>(staticConnectorTypes);
+
+  // Handler for dropdown selection change
+  const handleConnectorTypeSelectionChange = (types: string[]) => {
+    setSelectedConnectorTypes(types);
+    if (map) fetchStations(map);
+  };
   const [currentLocation, setCurrentLocation] =
     useState<google.maps.LatLngLiteral | null>(null);
   const [stations, setStations] = useState<any[]>([]);
@@ -402,13 +413,19 @@ export default function MapWeb({
 
   // Filter stations based on route proximity (only when route exists)
   function filteredStations() {
-    if (!directionsResponse || !start || !end) {
-      // No route planned - show all stations in viewport
-      return stations;
+    if (selectedConnectorTypes.length === 0) {
+      return [];
     }
-    
-    // Route exists - show stations within configured distance of route
+    if (!directionsResponse || !start || !end) {
+      // No route planned - show all stations in viewport, but filter by connector type
+      return stations.filter(station =>
+        station.connections && station.connections.some((conn: any) => selectedConnectorTypes.includes(conn.type))
+      );
+    }
+    // Route exists - show stations within configured distance of route and filter by connector type
     const filtered = stations.filter((station) => {
+  const hasSelectedConnector = station.connections && station.connections.some((conn: any) => selectedConnectorTypes.includes(conn.type));
+      if (!hasSelectedConnector) return false;
       const distance = getDistanceToRoute(
         station.latitude,
         station.longitude,
@@ -431,7 +448,6 @@ export default function MapWeb({
       // Calculate zoom level to determine how many stations to request
       const zoomLevel = mapInstance.getZoom() || 12;
       let maxResults;
-      
       if (zoomLevel <= 8) {
         maxResults = UI_CONFIG.maxStationsPerRequest.zoomedOut.toString();
       } else if (zoomLevel <= 10) {
@@ -447,43 +463,33 @@ export default function MapWeb({
         west: sw.lng().toString(),
         maxResults,
       });
+      // Add connectorTypes to params if any are selected
+      if (selectedConnectorTypes.length > 0) {
+        params.append('connectorTypes', selectedConnectorTypes.join(','));
+      }
 
       try {
         const response = await fetch(
           API_ENDPOINTS.chargingStations() + `?${params}`
         );
-
-        // Check if the request was successful
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
-
         const newStations = await response.json();
-
-        // Clear any previous backend error
         setBackendError(false);
-
-        // Smart merge: keep existing stations that are still visible, add new ones
         setStations((prevStations) => {
-          // Create a map of new stations by ID for quick lookup
           const newStationsMap = new Map(
             newStations.map((station: any) => [station.id, station])
           );
-
-          // Keep existing stations that are still in the new data
           const keptStations = prevStations.filter((station) =>
             newStationsMap.has(station.id)
           );
-
-          // Add new stations that weren't in the previous data
           const keptStationIds = new Set(
             keptStations.map((station) => station.id)
           );
           const addedStations = newStations.filter(
             (station: any) => !keptStationIds.has(station.id)
           );
-
-          // Also remove stations that are now outside the visible bounds
           const currentBounds = bounds;
           const visibleStations = keptStations.filter((station) => {
             const stationLat = station.latitude;
@@ -495,13 +501,10 @@ export default function MapWeb({
               stationLng <= ne.lng()
             );
           });
-
           return [...visibleStations, ...addedStations];
         });
       } catch (error) {
         console.error("Error fetching stations:", error);
-
-        // Check if it's a network error (backend not running)
         if (error instanceof TypeError && error.message.includes("fetch")) {
           setBackendError(true);
         } else if (
@@ -514,7 +517,7 @@ export default function MapWeb({
         setLoadingStations(false);
       }
     },
-    []
+    [selectedConnectorTypes]
   );
 
   // Unified function to fetch stations based on map bounds (always)
@@ -896,6 +899,48 @@ export default function MapWeb({
 
   return (
     <div style={{ width: "100%", height: "100vh", position: "relative" }}>
+      {/* Connector type filter button and dropdown */}
+      <div style={{ position: 'absolute', top: 20, right: 20, zIndex: 1001 }}>
+        <button
+          style={{
+            background: '#fff',
+            border: '1px solid #dadce0',
+            borderRadius: 8,
+            padding: '8px 16px',
+            fontWeight: 500,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
+            cursor: 'pointer',
+            minWidth: 180,
+            textAlign: 'left',
+          }}
+          onClick={() => setShowConnectorDropdown(v => !v)}
+        >
+          Filter charging stations by connector types
+          <span style={{ float: 'right', fontSize: 14, color: '#333' }}>{showConnectorDropdown ? '▲' : '▼'}</span>
+        </button>
+        {showConnectorDropdown && (
+          <div style={{
+            position: 'absolute',
+            top: 40,
+            right: 0,
+            background: '#fff',
+            border: '1px solid #dadce0',
+            borderRadius: 8,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+            padding: '12px 16px',
+            minWidth: 180,
+            maxHeight: 260,
+            overflowY: 'auto',
+          }}>
+            <ConnectorTypeDropdown
+              connectorTypes={connectorTypes}
+              selectedConnectorTypes={selectedConnectorTypes}
+              setSelectedConnectorTypes={setSelectedConnectorTypes}
+              onSelectionChange={handleConnectorTypeSelectionChange}
+            />
+          </div>
+        )}
+      </div>
       <GoogleMap
         center={initialCenter.current} //  only set once
         zoom={MAPS_CONFIG.defaultZoom}

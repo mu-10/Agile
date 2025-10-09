@@ -9,7 +9,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Initialize database connection (database-only mode)
+// Initialize database connection
 let db;
 try {
   db = new ChargingStationDB();
@@ -20,6 +20,8 @@ try {
   }
 } catch (error) {
   console.error('Database connection failed:', error);
+  const path = require('path');
+  const express = require('express');
   console.log('Server will start but database operations will fail until database is properly set up.');
 }
 
@@ -38,9 +40,14 @@ app.get("/api/charging-stations", async (req, res) => {
     const { north, south, east, west } = req.query;
     let { maxResults = 10000 } = req.query;
     maxResults = Math.min(parseInt(maxResults), 10000);
-    
+  // Serve static files from the data directory
+  app.use('/data', express.static(path.join(__dirname, 'data')));
+    const { connectorTypes } = req.query;
+    let filterTypes = [];
+    if (connectorTypes) {
+      filterTypes = Array.isArray(connectorTypes) ? connectorTypes : connectorTypes.split(',');
+    }
     let stations = [];
-    
     try {
       if (north && south && east && west) {
         stations = db.getStationsInBounds(
@@ -53,15 +60,19 @@ app.get("/api/charging-stations", async (req, res) => {
       } else {
         stations = db.getAllStations(maxResults);
       }
-      
+      // Filter stations by connector types if specified
+      if (filterTypes.length > 0) {
+        stations = stations.filter(station =>
+          station.connections.some(conn => filterTypes.includes(conn.type))
+        );
+      }
       if (stations.length === 0) {
         return res.status(404).json({
           error: "No charging station data found",
-          message: "The database appears to be empty. Please run 'npm run migrate' to populate the database with charging station data.",
+          message: "The database appears to be empty or no stations match the selected connector types. Please run 'npm run migrate' to populate the database with charging station data.",
           setup_instructions: "See README.md for detailed setup instructions."
         });
       }
-      
       res.json(stations);
     } catch (dbError) {
       console.error('Database query failed:', dbError);
@@ -89,7 +100,7 @@ app.post("/api/find-charging-stop", async (req, res) => {
     
     // Check if database is available
     if (!db) {
-      console.log("❌ Database not available");
+      console.log("Database not available");
       return res.status(503).json({
         error: "Database not available",
         message: "The charging station database is not properly set up. Please run 'npm run migrate' to populate the database with charging station data.",
@@ -281,3 +292,4 @@ const gracefulShutdown = (signal) => {
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
