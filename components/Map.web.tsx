@@ -924,7 +924,7 @@ export default function MapWeb({
             top: 40,
             right: 0,
             background: '#fff',
-            border: '1px solid #dadce0',
+            border: '1px solid #dadcei0',
             borderRadius: 8,
             boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
             padding: '12px 16px',
