@@ -4,24 +4,24 @@ const express = require("express");
 const cors = require("cors");
 const ChargingStationDB = require('./services/databaseService');
 const { findRecommendedChargingStation, calculateDistance } = require('./services/chargingRecommendationService');
+const path = require('path');
 const app = express();
 
 app.use(cors());
 app.use(express.json());
+// Serve static files from the data directory
+app.use('/data', express.static(path.join(__dirname, 'data')));
 
 // Initialize database connection
 let db;
 try {
   db = new ChargingStationDB();
   const stationCount = db.getStationCount();
-  
   if (stationCount === 0) {
     console.log('WARNING: No stations in database. Run "npm run migrate" to populate the database.');
   }
 } catch (error) {
   console.error('Database connection failed:', error);
-  const path = require('path');
-  const express = require('express');
   console.log('Server will start but database operations will fail until database is properly set up.');
 }
 
@@ -40,8 +40,6 @@ app.get("/api/charging-stations", async (req, res) => {
     const { north, south, east, west } = req.query;
     let { maxResults = 10000 } = req.query;
     maxResults = Math.min(parseInt(maxResults), 10000);
-  // Serve static files from the data directory
-  app.use('/data', express.static(path.join(__dirname, 'data')));
     const { connectorTypes } = req.query;
     let filterTypes = [];
     if (connectorTypes) {
