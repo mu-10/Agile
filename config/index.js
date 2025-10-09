@@ -14,11 +14,11 @@ const config = {
   },
   
   // Google Maps API configuration - load from environment variables
-  googleMapsApiKey: process.env.EXPO_PUBLIC_MAPS_WEB_KEY || process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_SERVER_KEY,
+  googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY,
   
   // Also add it in a maps object in case server.js expects it there
   maps: {
-    googleMapsApiKey: process.env.EXPO_PUBLIC_MAPS_WEB_KEY || process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_SERVER_KEY
+    googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY
   },
   
   // Additional ports for reference

@@ -94,8 +94,6 @@ app.get("/api/charging-stations", async (req, res) => {
 // New endpoint for finding optimal charging station for a route
 app.post("/api/find-charging-stop", async (req, res) => {
   try {
-    console.log("🚀 /api/find-charging-stop called with body:", req.body);
-    
     // Check if database is available
     if (!db) {
       console.log("Database not available");
@@ -115,11 +113,6 @@ app.post("/api/find-charging-stop", async (req, res) => {
       batteryCapacity,
       currentBatteryPercent = 100
     } = req.body;
-    
-    console.log("📊 Parsed parameters:");
-    console.log(`- Route: ${startLat},${startLng} → ${endLat},${endLng}`);
-    console.log(`- Battery: ${batteryRange}km range, ${batteryCapacity}kWh capacity`);
-    console.log(`- Current charge: ${currentBatteryPercent}%`);
 
     // Validate required parameters
     if (!startLat || !startLng || !endLat || !endLng || !batteryRange || !batteryCapacity) {
@@ -142,10 +135,7 @@ app.post("/api/find-charging-stop", async (req, res) => {
       const west = Math.min(start.lng, end.lng) - bufferDegrees;
       
       stations = db.getStationsInBounds(north, south, east, west, 2000);
-      
-      console.log(`🏪 Found ${stations.length} stations in database for route area`);
-      console.log(`📍 Search bounds: N=${north.toFixed(4)}, S=${south.toFixed(4)}, E=${east.toFixed(4)}, W=${west.toFixed(4)}`);
-      
+
       if (stations.length === 0) {
         return res.status(404).json({
           error: "No charging stations found in route area",
@@ -189,6 +179,10 @@ app.post("/api/find-charging-stop", async (req, res) => {
         needsCharging: false,
         chargingStation: null,
         alternatives: [],
+        totalDistance: typeof result.totalDistance === 'number' ? result.totalDistance : Number(result.totalDistance) || 0,
+        estimatedTime: typeof result.estimatedTime === 'number' ? result.estimatedTime : Number(result.estimatedTime) || 0,
+        rangeAtArrival: typeof result.rangeAtArrival === 'number' ? result.rangeAtArrival : Number(result.rangeAtArrival) || 0,
+        percentAtArrival: typeof result.percentAtArrival === 'number' ? result.percentAtArrival : Number(result.percentAtArrival) || 0,
         message: result.message || "No charging stop needed for this route"
       };
       res.json(response);
