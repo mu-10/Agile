@@ -55,10 +55,17 @@ export default function MapWeb({
   const [connectorTypes] = useState<string[]>(staticConnectorTypes);
   const [selectedConnectorTypes, setSelectedConnectorTypes] = useState<string[]>(staticConnectorTypes);
 
-  // Handler for dropdown selection change
-  const handleConnectorTypeSelectionChange = (types: string[]) => {
-    setSelectedConnectorTypes(types);
-    if (map) fetchStations(map);
+  // Handler for checkbox change
+  const handleConnectorTypeChange = (type: string) => {
+    setSelectedConnectorTypes(prev => {
+      if (prev.includes(type)) {
+        // Remove type
+        return prev.filter(t => t !== type);
+      } else {
+        // Add type
+        return [...prev, type];
+      }
+    });
   };
   const [currentLocation, setCurrentLocation] =
     useState<google.maps.LatLngLiteral | null>(null);
@@ -74,7 +81,7 @@ export default function MapWeb({
   const [showAlternatives, setShowAlternatives] = useState<boolean>(false); // Show alternative stations
   const [showChargingPanels, setShowChargingPanels] = useState<boolean>(false); // Stable UI state
   const [cachedRouteKey, setCachedRouteKey] = useState<string>(""); // Cache key for route
-  const [routeStationsFetched, setRouteStationsFetched] = useState<boolean>(false); // Track if stations fetched for current route
+  // Removed unused routeStationsFetched
   const [needsChargingStations, setNeedsChargingStations] = useState<boolean>(false); // Track if we need to find charging stations
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [backendError, setBackendError] = useState<boolean>(false);
@@ -533,9 +540,7 @@ export default function MapWeb({
   const debouncedFetchStations = useRef<number | null>(null);
   const onBoundsChanged = useCallback(() => {
     // Don't fetch new stations if we have a route and already fetched stations for it
-    if (directionsResponse && routeStationsFetched) {
-      return;
-    }
+    // Removed unused routeStationsFetched check
     
     if (map) {
       // Clear previous timeout
@@ -924,7 +929,7 @@ export default function MapWeb({
             top: 40,
             right: 0,
             background: '#fff',
-            border: '1px solid #dadcei0',
+            border: '1px solid #dadce0',
             borderRadius: 8,
             boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
             padding: '12px 16px',
@@ -936,7 +941,6 @@ export default function MapWeb({
               connectorTypes={connectorTypes}
               selectedConnectorTypes={selectedConnectorTypes}
               setSelectedConnectorTypes={setSelectedConnectorTypes}
-              onSelectionChange={handleConnectorTypeSelectionChange}
             />
           </div>
         )}
