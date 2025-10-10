@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import MapWeb from "../components/Map.web";
 import vehiclesData from "../data/vehicles.json";
+import { useDarkMode } from "./useDarkMode";
 
 export default function Index() {
   // Input states
@@ -27,6 +28,8 @@ export default function Index() {
   const [selectedVehicle, setSelectedVehicle] = useState<any>(null);
   const [vehiclePredictions, setVehiclePredictions] = useState<any[]>([]);
   const [showVehiclePreds, setShowVehiclePreds] = useState<boolean>(false);
+
+  const darkMode = useDarkMode();
 
   // Places Autocomplete predictions
   const [startPredictions, setStartPredictions] = useState<
@@ -145,7 +148,7 @@ export default function Index() {
       console.error("Reverse geocoding failed:", err);
       // Use a more readable format for coordinates as fallback
       const simpleAddress = `${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}`;
-      setStartInput(simpleAddress);
+        setStartInput(simpleAddress);
     }
   };
 
@@ -245,23 +248,46 @@ export default function Index() {
     setCapacityError(""); // Clear any existing capacity error
   };
 
+  // Google Maps dark style array
+  const darkMapStyle = [
+    { elementType: "geometry", stylers: [{ color: "#212121" }] },
+    { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+    { elementType: "labels.text.fill", stylers: [{ color: "#757575" }] },
+    { elementType: "labels.text.stroke", stylers: [{ color: "#212121" }] },
+    { featureType: "administrative", elementType: "geometry", stylers: [{ color: "#757575" }] },
+    { featureType: "poi", elementType: "geometry", stylers: [{ color: "#181818" }] },
+    { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#263c3f" }] },
+    { featureType: "road", elementType: "geometry", stylers: [{ color: "#383838" }] },
+    { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#212121" }] },
+    { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#9e9e9e" }] },
+    { featureType: "transit", elementType: "geometry", stylers: [{ color: "#2f3948" }] },
+    { featureType: "water", elementType: "geometry", stylers: [{ color: "#000000" }] },
+    { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#515c6d" }] },
+    { featureType: "water", elementType: "labels.text.stroke", stylers: [{ color: "#17263c" }] }
+  ];
+
   return (
-    <View style={{ flex: 1 }}>
-      {/* Toolbar */}
-      <View style={styles.toolbar}>
+    <View style={{ flex: 1, backgroundColor: darkMode ? "#18181b" : "#f3f4f6" }}>
+      <View style={[
+        styles.toolbar,
+        darkMode && { backgroundColor: "#27272a" }
+      ]}>
         <Ionicons
           name="navigate-outline"
           size={18}
-          color="#9ca3af"
+          color={darkMode ? "#d1d5db" : "#9ca3af"}
           style={styles.icon}
         />
-
         {/* From input with location button */}
         <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
           <TextInput
-            style={[styles.input, { flex: 1 }]}
+            style={[
+              styles.input,
+              { flex: 1 },
+              darkMode && { backgroundColor: "#27272a", color: "#d1d5db" },
+            ]}
             placeholder="From"
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={darkMode ? "#6b7280" : "#9ca3af"}
             value={startInput}
             onChangeText={(val) => {
               setStartInput(val);
@@ -299,9 +325,12 @@ export default function Index() {
 
         {/* To input */}
         <TextInput
-          style={styles.input}
+          style={[
+            styles.input,
+            darkMode && { backgroundColor: "#27272a", color: "#d1d5db" },
+          ]}
           placeholder="To"
-          placeholderTextColor="#9ca3af"
+          placeholderTextColor={darkMode ? "#6b7280" : "#9ca3af"}
           value={end}
           onChangeText={(val) => {
             setEnd(val);
@@ -323,9 +352,12 @@ export default function Index() {
 
         {/* Current battery range */}
         <TextInput
-          style={styles.input}
+          style={[
+            styles.input,
+            darkMode && { backgroundColor: "#27272a", color: "#d1d5db" },
+          ]}
           placeholder="Current range (km left)"
-          placeholderTextColor="#9ca3af"
+          placeholderTextColor={darkMode ? "#6b7280" : "#9ca3af"}
           value={batteryRange}
           keyboardType="numeric"
           onChangeText={handleRangeChange}
@@ -335,9 +367,9 @@ export default function Index() {
 
         {/* Vehicle selector */}
         <TextInput
-          style={styles.input}
+          style={[styles.input, darkMode && { backgroundColor: "#27272a", color: "#d1d5db" }]} // <-- fix for dark mode text
           placeholder="Select vehicle model (optional)"
-          placeholderTextColor="#9ca3af"
+          placeholderTextColor={darkMode ? "#6b7280" : "#9ca3af"}
           value={vehicleSearch}
           onChangeText={handleVehicleSearchChange}
           onFocus={() => setShowVehiclePreds(true)}
@@ -351,9 +383,12 @@ export default function Index() {
 
         {/* Max range */}
         <TextInput
-          style={styles.input}
+          style={[
+            styles.input,
+            darkMode && { backgroundColor: "#27272a", color: "#d1d5db" },
+          ]}
           placeholder="Max range (km when full)"
-          placeholderTextColor="#9ca3af"
+          placeholderTextColor={darkMode ? "#6b7280" : "#9ca3af"}
           value={batteryCapacity}
           keyboardType="numeric"
           onChangeText={handleCapacityChange}
@@ -385,53 +420,53 @@ export default function Index() {
 
       {/* Suggestions dropdowns (web only) - only render if showing predictions */}
       {Platform.OS === "web" && ((showStartPreds && startInput.length > 0) || (showEndPreds && end.length > 0)) ? (
-        <View style={styles.suggestionsContainer}>
+        <View style={[styles.suggestionsContainer, darkMode && { backgroundColor: "#18181b" }]}> 
           {showStartPreds && startInput.length > 0 && (
-            <View style={styles.suggestionsList}>
+            <View style={[styles.suggestionsList, darkMode && { backgroundColor: "#27272a", borderColor: "#444" }]}> 
               {startInput.length > 0 ? (
                 startPredictions.length > 0 ? (
                   startPredictions.slice(0, 8).map((p) => (
                     <Pressable
                       key={p.place_id}
                       onPress={() => pickPrediction(p, "start")}
-                      style={styles.suggestionItem}
+                      style={[styles.suggestionItem, darkMode && { backgroundColor: "#27272a" }]}
                     >
                       <Ionicons
                         name="location-outline"
                         size={14}
-                        color="#6b7280"
+                        color={darkMode ? "#d1d5db" : "#6b7280"}
                         style={{ marginRight: 6 }}
                       />
-                      <Text style={styles.suggestionText}>{p.description}</Text>
+                      <Text style={[styles.suggestionText, darkMode && { color: "#d1d5db" }]}>{p.description}</Text>
                     </Pressable>
                   ))
                 ) : (
-                  <Text style={{ padding: 10, color: "#888" }}>No address found</Text>
+                  <Text style={{ padding: 10, color: darkMode ? "#888" : "#888" }}>No address found</Text>
                 )
               ) : null}
             </View>
           )}
           {showEndPreds && end.length > 0 && (
-            <View style={styles.suggestionsList}>
+            <View style={[styles.suggestionsList, darkMode && { backgroundColor: "#27272a", borderColor: "#444" }]}> 
               {end.length > 0 ? (
                 endPredictions.length > 0 ? (
                   endPredictions.slice(0, 8).map((p) => (
                     <Pressable
                       key={p.place_id}
                       onPress={() => pickPrediction(p, "end")}
-                      style={styles.suggestionItem}
+                      style={[styles.suggestionItem, darkMode && { backgroundColor: "#27272a" }]}
                     >
                       <Ionicons
                         name="location-outline"
                         size={14}
-                        color="#6b7280"
+                        color={darkMode ? "#d1d5db" : "#6b7280"}
                         style={{ marginRight: 6 }}
                       />
-                      <Text style={styles.suggestionText}>{p.description}</Text>
+                      <Text style={[styles.suggestionText, darkMode && { color: "#d1d5db" }]}>{p.description}</Text>
                     </Pressable>
                   ))
                 ) : (
-                  <Text style={{ padding: 10, color: "#888" }}>No address found</Text>
+                  <Text style={{ padding: 10, color: darkMode ? "#888" : "#888" }}>No address found</Text>
                 )
               ) : null}
             </View>
@@ -441,18 +476,18 @@ export default function Index() {
 
       {/* Vehicle predictions dropdown */}
       {showVehiclePreds && vehiclePredictions.length > 0 && (
-        <View style={styles.vehicleDropdownContainer}>
-          <ScrollView style={styles.vehicleDropdown} showsVerticalScrollIndicator={false}>
+        <View style={[styles.vehicleDropdownContainer, darkMode && { backgroundColor: "#18181b" }]}> 
+          <ScrollView style={[styles.vehicleDropdown, darkMode && { backgroundColor: "#27272a", borderColor: "#444" }]} showsVerticalScrollIndicator={false}>
             {vehiclePredictions.map((vehicle: any, index: number) => (
               <Pressable
                 key={index}
-                style={styles.vehiclePredictionItem}
+                style={[styles.vehiclePredictionItem, darkMode && { backgroundColor: "#27272a" }]}
                 onPress={() => selectVehicle(vehicle)}
               >
-                <Text style={styles.predictionText}>
+                <Text style={[styles.predictionText, darkMode && { color: "#d1d5db" }]}>
                   {vehicle.brand} {vehicle.model}
                 </Text>
-                <Text style={styles.predictionSubtext}>
+                <Text style={[styles.predictionSubtext, darkMode && { color: "#a1a1aa" }]}>
                   {vehicle.range_km} km max range • {vehicle.battery_capacity_kWh} kWh
                 </Text>
               </Pressable>
@@ -462,7 +497,7 @@ export default function Index() {
       )}
 
   {/* Always show a solid grey divider between input fields and map */}
-  <View style={{ width: "100%", backgroundColor: "#f3f4f6", height: 8 }} />
+  <View style={{ width: "100%", backgroundColor: darkMode ? "#27272a" : "#f3f4f6", height: 8 }} />
       <View style={{ flex: 1 }}>
         <MapWeb
           start={plannedStart || ""} // only sends planned values
@@ -474,6 +509,7 @@ export default function Index() {
           onLocationChange={(loc) => setCurrentLocation(loc)}
           onMapsReady={() => setIsMapsReady(true)}
           showRecommendedLocations={!!(plannedStart && plannedEnd)} // only show when a route is planned
+          mapStyle={darkMode ? darkMapStyle : undefined}
         />
       </View>
     </View>
