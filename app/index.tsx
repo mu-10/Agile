@@ -13,6 +13,9 @@ import MapWeb from "../components/Map.web";
 import vehiclesData from "../data/vehicles.json";
 
 export default function Index() {
+  // Signal MapWeb to fit bounds when Plan is pressed
+  const [planTick, setPlanTick] = useState(0);
+
   // Input states
   const [startInput, setStartInput] = useState<string>("");
   const [startCoords, setStartCoords] = useState<string | null>(null);
@@ -102,8 +105,16 @@ export default function Index() {
     } else {
       setRangeError("");
     }
-    if (!batteryCapacity || isNaN(Number(batteryCapacity)) || Number(batteryCapacity) > 1000) {
-      setCapacityError(!batteryCapacity || isNaN(Number(batteryCapacity)) ? "Please enter a valid number for max range" : "Please enter a valid max range.");
+    if (
+      !batteryCapacity ||
+      isNaN(Number(batteryCapacity)) ||
+      Number(batteryCapacity) > 1000
+    ) {
+      setCapacityError(
+        !batteryCapacity || isNaN(Number(batteryCapacity))
+          ? "Please enter a valid number for max range"
+          : "Please enter a valid max range."
+      );
       valid = false;
     } else {
       setCapacityError("");
@@ -116,6 +127,9 @@ export default function Index() {
     setPlannedOriginPlaceId(originPlaceId);
     setPlannedDestinationPlaceId(destinationPlaceId);
     setPlannedRange(Number(batteryRange));
+
+    // 🔑 Delay the "fit route" nudge so MapWeb has time to compute directions.
+    setTimeout(() => setPlanTick((t) => t + 1), 350);
   };
 
   // Fill input with current location on button press
@@ -123,7 +137,7 @@ export default function Index() {
     if (!currentLocation) return;
     const loc = currentLocation;
     setStartCoords(`${loc.lat},${loc.lng}`);
-    
+
     // Hide autocomplete dropdown when using current location
     setShowStartPreds(false);
     setStartPredictions([]);
@@ -134,16 +148,13 @@ export default function Index() {
       );
       const json = await res.json();
       if (json.results && json.results.length > 0) {
-        // Always set the actual address from reverse geocoding
         setStartInput(json.results[0].formatted_address);
       } else {
-        // Try to get a simpler address format if the first one fails
         const simpleAddress = `${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}`;
         setStartInput(simpleAddress);
       }
     } catch (err) {
       console.error("Reverse geocoding failed:", err);
-      // Use a more readable format for coordinates as fallback
       const simpleAddress = `${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}`;
       setStartInput(simpleAddress);
     }
@@ -168,7 +179,6 @@ export default function Index() {
       }
       const opts: google.maps.places.AutocompletionRequest = {
         input: text,
-        // Optional: bias to current location if we have it
         ...(currentLocation && {
           location: new google.maps.LatLng(
             currentLocation.lat,
@@ -213,12 +223,14 @@ export default function Index() {
       setVehiclePredictions([]);
       return;
     }
-    
-    const filtered = vehiclesData.filter((vehicle: any) => {
-      const fullName = `${vehicle.brand} ${vehicle.model}`;
-      return fullName.toLowerCase().includes(searchText.toLowerCase());
-    }).slice(0, 10); // Limit to 10 results
-    
+
+    const filtered = vehiclesData
+      .filter((vehicle: any) => {
+        const fullName = `${vehicle.brand} ${vehicle.model}`;
+        return fullName.toLowerCase().includes(searchText.toLowerCase());
+      })
+      .slice(0, 10);
+
     setVehiclePredictions(filtered);
   };
 
@@ -226,11 +238,8 @@ export default function Index() {
     setVehicleSearch(text);
     setShowVehiclePreds(true);
     searchVehicles(text);
-    
-    // If text is cleared, also clear the selected vehicle
-    if (!text) {
-      setSelectedVehicle(null);
-    }
+
+    if (!text) setSelectedVehicle(null);
   };
 
   const selectVehicle = (vehicle: any) => {
@@ -239,10 +248,10 @@ export default function Index() {
     setSelectedVehicle(vehicle);
     setShowVehiclePreds(false);
     setVehiclePredictions([]);
-    
+
     // Auto-fill the max range from vehicle data
     setBatteryCapacity(vehicle.range_km.toString());
-    setCapacityError(""); // Clear any existing capacity error
+    setCapacityError("");
   };
 
   return (
@@ -293,7 +302,6 @@ export default function Index() {
             </Pressable>
           )}
         </View>
-          {/* Removed obsolete autocomplete predictions dropdown. Only use the new conditional dropdown below. */}
 
         <View style={styles.divider} />
 
@@ -342,7 +350,6 @@ export default function Index() {
           onChangeText={handleVehicleSearchChange}
           onFocus={() => setShowVehiclePreds(true)}
           onBlur={() => {
-            // Delay hiding to allow for selection
             setTimeout(() => setShowVehiclePreds(false), 150);
           }}
         />
@@ -362,11 +369,23 @@ export default function Index() {
         {/* Plan button */}
         <Pressable
           onPress={onPlan}
-          disabled={!startInput || !end || !batteryRange || !batteryCapacity || !!rangeError || !!capacityError}
+          disabled={
+            !startInput ||
+            !end ||
+            !batteryRange ||
+            !batteryCapacity ||
+            !!rangeError ||
+            !!capacityError
+          }
           style={({ pressed }) => [
             styles.button,
             pressed && styles.buttonPressed,
-            (!startInput || !end || !batteryRange || !batteryCapacity || !!rangeError || !!capacityError) &&
+            (!startInput ||
+              !end ||
+              !batteryRange ||
+              !batteryCapacity ||
+              !!rangeError ||
+              !!capacityError) &&
               styles.buttonDisabled,
           ]}
         >
@@ -383,8 +402,10 @@ export default function Index() {
       {rangeError ? <Text style={styles.error}>{rangeError}</Text> : null}
       {capacityError ? <Text style={styles.error}>{capacityError}</Text> : null}
 
-      {/* Suggestions dropdowns (web only) - only render if showing predictions */}
-      {Platform.OS === "web" && ((showStartPreds && startInput.length > 0) || (showEndPreds && end.length > 0)) ? (
+      {/* Suggestions dropdowns (web only) */}
+      {Platform.OS === "web" &&
+      ((showStartPreds && startInput.length > 0) ||
+        (showEndPreds && end.length > 0)) ? (
         <View style={styles.suggestionsContainer}>
           {showStartPreds && startInput.length > 0 && (
             <View style={styles.suggestionsList}>
@@ -402,11 +423,15 @@ export default function Index() {
                         color="#6b7280"
                         style={{ marginRight: 6 }}
                       />
-                      <Text style={styles.suggestionText}>{p.description}</Text>
+                      <Text style={styles.suggestionText}>
+                        {p.description}
+                      </Text>
                     </Pressable>
                   ))
                 ) : (
-                  <Text style={{ padding: 10, color: "#888" }}>No address found</Text>
+                  <Text style={{ padding: 10, color: "#888" }}>
+                    No address found
+                  </Text>
                 )
               ) : null}
             </View>
@@ -431,7 +456,9 @@ export default function Index() {
                     </Pressable>
                   ))
                 ) : (
-                  <Text style={{ padding: 10, color: "#888" }}>No address found</Text>
+                  <Text style={{ padding: 10, color: "#888" }}>
+                    No address found
+                  </Text>
                 )
               ) : null}
             </View>
@@ -442,7 +469,10 @@ export default function Index() {
       {/* Vehicle predictions dropdown */}
       {showVehiclePreds && vehiclePredictions.length > 0 && (
         <View style={styles.vehicleDropdownContainer}>
-          <ScrollView style={styles.vehicleDropdown} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            style={styles.vehicleDropdown}
+            showsVerticalScrollIndicator={false}
+          >
             {vehiclePredictions.map((vehicle: any, index: number) => (
               <Pressable
                 key={index}
@@ -461,8 +491,10 @@ export default function Index() {
         </View>
       )}
 
-  {/* Always show a solid grey divider between input fields and map */}
-  <View style={{ width: "100%", backgroundColor: "#f3f4f6", height: 8 }} />
+      {/* Divider */}
+      <View style={{ width: "100%", backgroundColor: "#f3f4f6", height: 8 }} />
+
+      {/* Map */}
       <View style={{ flex: 1 }}>
         <MapWeb
           start={plannedStart || ""} // only sends planned values
@@ -474,6 +506,7 @@ export default function Index() {
           onLocationChange={(loc) => setCurrentLocation(loc)}
           onMapsReady={() => setIsMapsReady(true)}
           showRecommendedLocations={!!(plannedStart && plannedEnd)} // only show when a route is planned
+          fitRouteSignal={planTick} // tells MapWeb to fit the route
         />
       </View>
     </View>
@@ -532,7 +565,7 @@ const styles = StyleSheet.create({
     zIndex: 9999,
     left: 12,
     right: 12,
-    top: 70, // just under the toolbar
+    top: 70,
   },
   suggestionsList: {
     backgroundColor: "#fff",
@@ -594,7 +627,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 12,
     right: 12,
-    top: 70, // Position below the toolbar
+    top: 70,
     zIndex: 99999,
   },
   vehicleDropdown: {

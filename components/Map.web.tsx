@@ -31,6 +31,8 @@ type Props = {
   batteryCapacity: number;
   onMapsReady?: () => void; // notify parent when Maps JS is ready (web)
   showRecommendedLocations?: boolean; // whether to show recommended charging stations
+  /** Incrementing counter from Index.tsx to trigger fitBounds */
+  fitRouteSignal?: number;
 };
 
 const chargingIcon = "https://maps.google.com/mapfiles/ms/icons/green-dot.png";
@@ -48,6 +50,7 @@ export default function MapWeb({
   batteryCapacity,
   onMapsReady,
   showRecommendedLocations = true, // default to showing recommended locations
+  fitRouteSignal = 0,
 }: Props) {
   const [currentLocation, setCurrentLocation] =
     useState<google.maps.LatLngLiteral | null>(null);
@@ -87,9 +90,10 @@ export default function MapWeb({
   });
 
   // Reuse a single DirectionsService instance
-  const directionsServiceRef = useRef<google.maps.DirectionsService | null>(
-    null
-  );
+  const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null);
+
+  // Bounds of the current route (single- or two-leg). Updated when routes change.
+  const routeBoundsRef = useRef<google.maps.LatLngBounds | null>(null);
 
   // Helper to parse "lat,lng" strings
   const parseLatLng = useCallback(
@@ -103,6 +107,50 @@ export default function MapWeb({
     },
     []
   );
+
+  // Build/refresh combined route bounds from the active DirectionsResults
+  const rebuildRouteBounds = useCallback(() => {
+    // Nothing to do if no route yet
+    if (!directionsResponse && !chargingRouteResponse) {
+      routeBoundsRef.current = null;
+      return;
+    }
+    const b = new google.maps.LatLngBounds();
+
+    const addResultToBounds = (res: google.maps.DirectionsResult | null) => {
+      if (!res || !res.routes || !res.routes[0]) return;
+      const r = res.routes[0];
+      if (r.bounds) {
+        b.union(r.bounds);
+        return;
+      }
+      // Fallback: extend from overview_path
+      if (r.overview_path && r.overview_path.length) {
+        r.overview_path.forEach(pt => b.extend(pt));
+      } else if (r.legs && r.legs.length) {
+        // Fallback of the fallback: legs start/end locations
+        r.legs.forEach(leg => {
+          if (leg.start_location) b.extend(leg.start_location);
+          if (leg.end_location) b.extend(leg.end_location);
+        });
+      }
+    };
+
+    addResultToBounds(directionsResponse);
+    addResultToBounds(chargingRouteResponse);
+
+    // If bounds are valid (not empty), cache them
+    try {
+      const ne = b.getNorthEast();
+      const sw = b.getSouthWest();
+      if (ne && sw && (ne.lat() !== sw.lat() || ne.lng() !== sw.lng())) {
+        routeBoundsRef.current = b;
+      }
+    } catch {
+      // ignore if bounds invalid
+      routeBoundsRef.current = null;
+    }
+  }, [directionsResponse, chargingRouteResponse]);
 
   // Function to find optimal charging stop automatically
   const findChargingStop = useCallback(async (
@@ -135,7 +183,6 @@ export default function MapWeb({
       setChargingStopInfo(data);
       
       if (data.needsCharging && data.chargingStation) {
-        console.log("🔍 Charging station data:", data.chargingStation);
         setAutoSelectedChargingStation(data.chargingStation);
         setAlternativeStations(data.alternatives || []);
         setShowChargingRoute(true);
@@ -263,7 +310,6 @@ export default function MapWeb({
   const [stationReachability, setStationReachability] = useState<{[key: string]: {reachable: boolean, message: string}}>({});
 
   // Function to check if a station is reachable within battery range
-  // TODO: This should be moved to backend service with proper route calculation
   const checkStationReachability = useCallback(async (station: any, batteryRange: number) => {
     if (!start) return { reachable: false, message: "No starting point set" };
     
@@ -350,8 +396,6 @@ export default function MapWeb({
     }
   }, [selectedStation, batteryRange, showChargingRoute, chargingStopInfo, checkStationReachability, stationReachability]);
 
-
-
   // Helper function to calculate distance from a point to the route path
   const getDistanceToRoute = useCallback(
     (
@@ -388,7 +432,6 @@ export default function MapWeb({
       // No route planned - show all stations in viewport
       return stations;
     }
-    
     // Route exists - show stations within configured distance of route
     const filtered = stations.filter((station) => {
       const distance = getDistanceToRoute(
@@ -484,11 +527,11 @@ export default function MapWeb({
         console.error("Error fetching stations:", error);
 
         // Check if it's a network error (backend not running)
-        if (error instanceof TypeError && error.message.includes("fetch")) {
+        if (error instanceof TypeError && (error as any).message?.includes("fetch")) {
           setBackendError(true);
         } else if (
           error instanceof Error &&
-          error.message.includes("HTTP error")
+          (error as Error).message.includes("HTTP error")
         ) {
           setBackendError(true);
         }
@@ -515,19 +558,17 @@ export default function MapWeb({
     if (directionsResponse && routeStationsFetched) {
       return;
     }
-    
     if (map) {
       // Clear previous timeout
       if (debouncedFetchStations.current) {
         clearTimeout(debouncedFetchStations.current);
       }
-
       // Set new timeout - use configured debounce delay
       debouncedFetchStations.current = setTimeout(() => {
         fetchStations(map);
       }, UI_CONFIG.debounceDelay) as unknown as number;
     }
-  }, [map, fetchStations]);
+  }, [map, fetchStations, directionsResponse, routeStationsFetched]);
 
   // Handle map load
   const onLoad = useCallback(
@@ -583,25 +624,15 @@ export default function MapWeb({
     }
     // Notify parent once maps are ready
     onMapsReady && onMapsReady();
-  }, [isLoaded]);
+  }, [isLoaded, onMapsReady]);
 
   // Calculate route whenever inputs change
   useEffect(() => {
-    if (!isLoaded) {
-      return;
-    }
-    if (!directionsServiceRef.current) {
-      return;
-    }
-    if (!start && !originPlaceId) {
-      return; // need at least one origin signal
-    }
-    if (!end && !destinationPlaceId) {
-      return; // need at least one destination signal
-    }
-    if (!batteryRange || batteryRange <= 0) {
-      return; // need valid battery range for charging calculations
-    }
+    if (!isLoaded) return;
+    if (!directionsServiceRef.current) return;
+    if (!start && !originPlaceId) return; // need at least one origin signal
+    if (!end && !destinationPlaceId) return; // need at least one destination signal
+    if (!batteryRange || batteryRange <= 0) return; // need valid battery range for charging calculations
 
     // Build origin param
     let origin:
@@ -648,7 +679,6 @@ export default function MapWeb({
           
           // Check if charging is needed
           if (routeDistance > batteryRange && batteryRange > 0) {
-            
             // Need charging - find optimal charging station
             let startCoords = parseLatLng(start) || (typeof origin === 'object' && 'lat' in origin ? origin : null);
             let endCoords = parseLatLng(end) || (typeof destination === 'object' && 'lat' in destination ? destination : null);
@@ -662,7 +692,6 @@ export default function MapWeb({
                   lng: startLocation.lng()
                 };
               }
-              
               if (!endCoords) {
                 const endLocation = result.routes[0].legs[0].end_location;
                 endCoords = {
@@ -671,7 +700,6 @@ export default function MapWeb({
                 };
               }
             }
-            
             if (startCoords && endCoords) {
               // Store the original full route for station filtering
               setDirectionsResponse(result);
@@ -708,7 +736,7 @@ export default function MapWeb({
     );
   }, [isLoaded, start, end, originPlaceId, destinationPlaceId, batteryRange, parseLatLng, findChargingStop]);
 
-  // Battery range check
+  // Keep a quick check for battery range
   const exceedsRange =
     distance && batteryRange
       ? parseFloat(distance.replace(/[^\d.]/g, "")) > batteryRange
@@ -719,7 +747,7 @@ export default function MapWeb({
   const [isLoadingRecommendation, setIsLoadingRecommendation] = useState<boolean>(false);
   const lastRouteRef = useRef<string | null>(null);
 
-  // Function to find charging station recommendation
+  // Build charging station recommendation (unchanged)
   const findChargingStationRecommendation = useCallback(async () => {
     if (!exceedsRange || !start || !end || !batteryRange || !batteryCapacity) {
       setRecommendedStation(null);
@@ -734,7 +762,6 @@ export default function MapWeb({
     const endLocation = route.legs[route.legs.length - 1].end_location;
     const routeSignature = `${startLocation.lat()},${startLocation.lng()}-${endLocation.lat()},${endLocation.lng()}-${batteryRange}`;
     
-    // If we already processed this route, don't call again
     if (lastRouteRef.current === routeSignature) {
       return;
     }
@@ -743,11 +770,7 @@ export default function MapWeb({
     setIsLoadingRecommendation(true);
     
     try {
-      const route = directionsResponse.routes[0];
-      const startLocation = route.legs[0].start_location;
-      const endLocation = route.legs[route.legs.length - 1].end_location;
-      
-  const response = await fetch(API_ENDPOINTS.findChargingStop(), {
+      const response = await fetch(API_ENDPOINTS.findChargingStop(), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -759,7 +782,7 @@ export default function MapWeb({
           endLng: endLocation.lng(),
           batteryRange: batteryRange,
           batteryCapacity: batteryCapacity,
-          currentBatteryPercent: 100 // Assume starting with full battery
+          currentBatteryPercent: 100
         }),
       });
 
@@ -768,7 +791,6 @@ export default function MapWeb({
         if (data.needsCharging && data.chargingStation) {
           setRecommendedStation(data.chargingStation);
           
-          // Calculate new route through the charging station
           if (directionsServiceRef.current) {
             const waypoint = {
               location: {
@@ -845,7 +867,20 @@ export default function MapWeb({
       setRecommendedStation(null);
       lastRouteRef.current = null; // Clear route reference when not needed
     }
-  }, [exceedsRange, directionsResponse]);
+  }, [exceedsRange, directionsResponse, findChargingStationRecommendation]);
+
+  // Rebuild cached bounds whenever the primary or charging routes change
+  useEffect(() => {
+    rebuildRouteBounds();
+  }, [directionsResponse, chargingRouteResponse, rebuildRouteBounds]);
+
+  // Fit the whole route when parent signals (Plan clicked)
+  useEffect(() => {
+    if (!map || !routeBoundsRef.current) return;
+    const padding: google.maps.Padding = { top: 80, right: 40, bottom: 40, left: 40 };
+    // @ts-ignore - fitBounds padding overload supported in Maps JS
+    map.fitBounds(routeBoundsRef.current, padding);
+  }, [fitRouteSignal, map]);
 
   // Handle clicking recommended charging station
   const handleRecommendedStationClick = useCallback((station: any) => {
@@ -853,7 +888,6 @@ export default function MapWeb({
       // Zoom to station location
       map.setCenter({ lat: station.latitude, lng: station.longitude });
       map.setZoom(16);
-      
       // Show info window
       setSelectedStation(station);
     }
@@ -996,26 +1030,18 @@ export default function MapWeb({
           />
         )}
 
-
-
         {/* Charging station markers - filtered by route proximity */}
         {(() => {
           const stationsToRender = filteredStations();
           
-          if (loadingStations) {
-            return null;
-          }
-          
-          if (!Array.isArray(stationsToRender) || stationsToRender.length === 0) {
-            return null;
-          }
+          if (loadingStations) return null;
+          if (!Array.isArray(stationsToRender) || stationsToRender.length === 0) return null;
           
           return stationsToRender.map((station: any) => {
             // Don't show regular marker if this is the auto-selected station
             if (autoSelectedChargingStation && station.id === autoSelectedChargingStation.id) {
               return null;
             }
-            
             return (
               <Marker
                 key={station.id}
@@ -1138,8 +1164,6 @@ export default function MapWeb({
                 </div>
               )}
 
-
-
               {selectedStation.connections &&
                 selectedStation.connections.length > 0 && (
                   <div>
@@ -1189,7 +1213,7 @@ export default function MapWeb({
           {/* Charging route information */}
           {showChargingRoute && chargingStopInfo?.routeDetails && (
             <div>
-              {/* Total Trip Summary - Google Maps style */}
+              {/* Total Trip Summary */}
               <div style={{ marginBottom: "16px" }}>
                 <div style={{ 
                   display: "flex", 
@@ -1247,8 +1271,7 @@ export default function MapWeb({
 
               {/* Route Steps */}
               <div style={{ borderTop: "1px solid #e8eaed", paddingTop: "12px" }}>
-                
-                {/* Step 1: Drive to charging station */}
+                {/* Step 1 */}
                 <div style={{ 
                   display: "flex", 
                   marginBottom: "12px",
@@ -1305,7 +1328,7 @@ export default function MapWeb({
                   </div>
                 </div>
 
-                {/* Step 2: Charge */}
+                {/* Step 2 */}
                 <div style={{ 
                   display: "flex", 
                   marginBottom: "12px",
@@ -1356,11 +1379,8 @@ export default function MapWeb({
                   </div>
                 </div>
 
-                {/* Step 3: Drive to destination */}
-                <div style={{ 
-                  display: "flex", 
-                  marginBottom: "8px"
-                }}>
+                {/* Step 3 */}
+                <div style={{ display: "flex", marginBottom: "8px" }}>
                   <div style={{ 
                     width: "24px", 
                     flexShrink: 0,
