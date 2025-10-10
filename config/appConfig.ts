@@ -1,10 +1,9 @@
 // Central configuration file for all application settings
-// Change ports and other settings here
 
 export const APP_CONFIG = {
   // Server ports
   ports: {
-    backend: 8080,
+    backend: 4000,
     frontend: 3000,
     expo: 8081,
   },

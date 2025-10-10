@@ -4,17 +4,19 @@ const express = require("express");
 const cors = require("cors");
 const ChargingStationDB = require('./services/databaseService');
 const { findRecommendedChargingStation, calculateDistance } = require('./services/chargingRecommendationService');
+const path = require('path');
 const app = express();
 
 app.use(cors());
 app.use(express.json());
+// Serve static files from the data directory
+app.use('/data', express.static(path.join(__dirname, 'data')));
 
-// Initialize database connection (database-only mode)
+// Initialize database connection
 let db;
 try {
   db = new ChargingStationDB();
   const stationCount = db.getStationCount();
-  
   if (stationCount === 0) {
     console.log('WARNING: No stations in database. Run "npm run migrate" to populate the database.');
   }
@@ -38,9 +40,12 @@ app.get("/api/charging-stations", async (req, res) => {
     const { north, south, east, west } = req.query;
     let { maxResults = 10000 } = req.query;
     maxResults = Math.min(parseInt(maxResults), 10000);
-    
+    const { connectorTypes } = req.query;
+    let filterTypes = [];
+    if (connectorTypes) {
+      filterTypes = Array.isArray(connectorTypes) ? connectorTypes : connectorTypes.split(',');
+    }
     let stations = [];
-    
     try {
       if (north && south && east && west) {
         stations = db.getStationsInBounds(
@@ -53,15 +58,19 @@ app.get("/api/charging-stations", async (req, res) => {
       } else {
         stations = db.getAllStations(maxResults);
       }
-      
+      // Filter stations by connector types if specified
+      if (filterTypes.length > 0) {
+        stations = stations.filter(station =>
+          station.connections.some(conn => filterTypes.includes(conn.type))
+        );
+      }
       if (stations.length === 0) {
         return res.status(404).json({
           error: "No charging station data found",
-          message: "The database appears to be empty. Please run 'npm run migrate' to populate the database with charging station data.",
+          message: "The database appears to be empty or no stations match the selected connector types. Please run 'npm run migrate' to populate the database with charging station data.",
           setup_instructions: "See README.md for detailed setup instructions."
         });
       }
-      
       res.json(stations);
     } catch (dbError) {
       console.error('Database query failed:', dbError);
@@ -87,6 +96,7 @@ app.post("/api/find-charging-stop", async (req, res) => {
   try {
     // Check if database is available
     if (!db) {
+      console.log("Database not available");
       return res.status(503).json({
         error: "Database not available",
         message: "The charging station database is not properly set up. Please run 'npm run migrate' to populate the database with charging station data.",
@@ -125,7 +135,7 @@ app.post("/api/find-charging-stop", async (req, res) => {
       const west = Math.min(start.lng, end.lng) - bufferDegrees;
       
       stations = db.getStationsInBounds(north, south, east, west, 2000);
-      
+
       if (stations.length === 0) {
         return res.status(404).json({
           error: "No charging stations found in route area",
@@ -169,6 +179,10 @@ app.post("/api/find-charging-stop", async (req, res) => {
         needsCharging: false,
         chargingStation: null,
         alternatives: [],
+        totalDistance: typeof result.totalDistance === 'number' ? result.totalDistance : Number(result.totalDistance) || 0,
+        estimatedTime: typeof result.estimatedTime === 'number' ? result.estimatedTime : Number(result.estimatedTime) || 0,
+        rangeAtArrival: typeof result.rangeAtArrival === 'number' ? result.rangeAtArrival : Number(result.rangeAtArrival) || 0,
+        percentAtArrival: typeof result.percentAtArrival === 'number' ? result.percentAtArrival : Number(result.percentAtArrival) || 0,
         message: result.message || "No charging stop needed for this route"
       };
       res.json(response);
@@ -270,3 +284,4 @@ const gracefulShutdown = (signal) => {
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+

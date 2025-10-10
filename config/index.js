@@ -7,23 +7,23 @@ require('dotenv').config();
 const config = {
   // Server configuration - matches what server.js expects
   server: {
-    port: process.env.PORT || 8080, // Use PORT from .env or default to 8080
+    port: process.env.PORT || 4000, // Use PORT from .env or default to 4000
     getUrl: function() {
       return `http://localhost:${this.port}`;
     }
   },
   
   // Google Maps API configuration - load from environment variables
-  googleMapsApiKey: process.env.EXPO_PUBLIC_MAPS_WEB_KEY || process.env.GOOGLE_MAPS_SERVER_KEY,
+  googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY,
   
   // Also add it in a maps object in case server.js expects it there
   maps: {
-    googleMapsApiKey: process.env.EXPO_PUBLIC_MAPS_WEB_KEY || process.env.GOOGLE_MAPS_SERVER_KEY
+    googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY
   },
   
   // Additional ports for reference
   ports: {
-    backend: 8080,
+    backend: 4000, // Updated to match actual server port
     frontend: 3000,
     expo: 8081,
   },
@@ -42,11 +42,17 @@ const config = {
     // Add database configuration here if needed
   },
   
+  // External service settings - for server.js compatibility
+  external: {
+    googleMapsApiKey: process.env.EXPO_PUBLIC_MAPS_WEB_KEY || process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_SERVER_KEY
+  },
+  
   // CORS settings
   cors: {
     origin: [
-      `http://localhost:${3000}`, // frontend
-      `http://localhost:${8081}`, // expo
+      `http://localhost:3000`, // frontend
+      `http://localhost:8081`, // expo
+      `http://localhost:19006`, // expo web (alternative port)
     ],
     credentials: true,
   },
