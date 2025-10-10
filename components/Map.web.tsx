@@ -136,8 +136,7 @@ export default function MapWeb({
         endLat: endCoords.lat,
         endLng: endCoords.lng,
         batteryRange,
-        batteryCapacity,
-        currentBatteryPercent: 100 // Assume full battery at start
+        batteryCapacity
       };
       
       const response = await fetch(API_ENDPOINTS.findChargingStop(), {
@@ -770,8 +769,7 @@ export default function MapWeb({
           endLat: endLocation.lat(),
           endLng: endLocation.lng(),
           batteryRange: batteryRange,
-          batteryCapacity: batteryCapacity,
-          currentBatteryPercent: 100 // Assume starting with full battery
+          batteryCapacity: batteryCapacity
         }),
       });
 
@@ -1656,72 +1654,34 @@ export default function MapWeb({
           {!showChargingRoute && chargingStopInfo && chargingStopInfo.needsCharging === false && (
             <div style={{ marginBottom: "8px" }}>
               {(() => {
-                // Always log backend response for debugging
-                const valid = typeof chargingStopInfo.estimatedTime === 'number' && typeof chargingStopInfo.rangeAtArrival === 'number' && typeof chargingStopInfo.percentAtArrival === 'number' && typeof chargingStopInfo.totalDistance === 'number';
+                // Accept both number and string types, convert to number if needed
+                const totalDistance = Number(chargingStopInfo.totalDistance);
+                const batteryRangeStart = Number(batteryRange);
+                const rangeAtArrival = batteryRangeStart - totalDistance;
+                const percentAtArrival = batteryRangeStart > 0 ? (rangeAtArrival / batteryRangeStart) * 100 : 0;
+                const estimatedTime = Number(chargingStopInfo.estimatedTime);
+                const valid = [estimatedTime, rangeAtArrival, percentAtArrival, totalDistance].every(v => typeof v === 'number' && !isNaN(v));
                 if (valid) {
                   return (
                     <>
-                      <div style={{ 
-                        display: "flex", 
-                        alignItems: "center", 
-                        marginBottom: "4px" 
-                      }}>
-                        <div style={{
-                          width: "12px",
-                          height: "12px",
-                          backgroundColor: "#1a73e8",
-                          borderRadius: "50%",
-                          marginRight: "8px",
-                        }}></div>
-                        <span style={{ 
-                          fontSize: "16px", 
-                          fontWeight: "500", 
-                          color: "#202124" 
-                        }}>
-                          {(() => {
-                            const min = chargingStopInfo.estimatedTime;
-                            if (min >= 60) {
-                              const h = Math.floor(min / 60);
-                              const m = min % 60;
-                              return `${h}h${m > 0 ? ' ' + m + ' min' : ''}`;
-                            }
-                            return `${min} min`;
-                          })()}
+                      <div style={{ display: "flex", alignItems: "center", marginBottom: "4px" }}>
+                        <span style={{ fontWeight: 500, color: "#202124" }}>
+                          Fastest route
                         </span>
-                        <span style={{ 
-                          fontSize: "14px", 
-                          color: "#5f6368", 
-                          marginLeft: "8px" 
-                        }}>
-                          ({chargingStopInfo.totalDistance} km)
+                        <span style={{ fontSize: "14px", color: "#5f6368", marginLeft: "8px" }}>
+                          ({totalDistance} km)
                         </span>
                       </div>
-                      <div style={{ fontSize: "14px", color: "#202124", fontWeight: "400", marginBottom: "2px" }}>
-                        Drive to destination
+                      <div style={{ fontSize: "13px", color: "#1976d2", marginBottom: "4px" }}>
+                        Estimated time: {estimatedTime} min
                       </div>
                       <div style={{ fontSize: "12px", color: "#5f6368" }}>
-                        Range at arrival: {chargingStopInfo.rangeAtArrival} km (
-                          {(() => {
-                            const percent = chargingStopInfo.percentAtArrival;
-                            let color = '#10b981'; // green
-                            if (percent < 20) color = '#ef4444'; // red
-                            else if (percent < 50) color = '#fbbf24'; // orange
-                            return <span style={{ color }}>{percent.toFixed(1)}%</span>;
-                          })()}
-                        )
+                        Range at arrival: {rangeAtArrival.toFixed(1)} km ({percentAtArrival.toFixed(1)}%)
                       </div>
                     </>
                   );
-                } else {
-                  // Fallback: show all available fields and error message
-                  return (
-                    <div style={{ color: '#ef4444', fontWeight: 500, fontSize: '14px', padding: '8px' }}>
-                      <div>Missing or invalid route info from backend.</div>
-                      <div>Raw response:</div>
-                      <pre style={{ fontSize: '12px', color: '#333', background: '#f3f4f6', padding: '8px', borderRadius: '4px', maxWidth: '300px', overflowX: 'auto' }}>{JSON.stringify(chargingStopInfo, null, 2)}</pre>
-                    </div>
-                  );
                 }
+                return <div style={{ color: '#ef4444' }}>Route summary unavailable</div>;
               })()}
             </div>
           )}

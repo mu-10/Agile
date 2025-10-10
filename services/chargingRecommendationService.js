@@ -161,7 +161,6 @@ async function calculateActualDetour(start, end, station, originalRouteDistance,
       };
     }
   } catch (error) {
-    console.warn("Error calculating actual detour:", error.message);
     
     // Fallback calculation
     const distanceToStation = await calculateDistance(start.lat, start.lng, station.latitude, station.longitude, googleMapsApiKey);
@@ -260,9 +259,9 @@ function getMaxChargingPower(station) {
 }
 
 // Helper function to estimate charging time
-function estimateChargingTime(powerKW, batteryCapacityKWh) {
+function estimateChargingTime(powerKW, batteryCapacity) {
   // Estimate charging from 20% to 80% (60% of battery)
-  const chargeAmount = parseFloat(batteryCapacityKWh) * 0.6;
+  const chargeAmount = parseFloat(batteryCapacity) * 0.6;
   
   // Charging efficiency decreases at higher power, estimate 85% efficiency
   const effectivePower = powerKW * 0.85;
@@ -390,25 +389,43 @@ async function scoreAndRankStations(viableStations, start, end, totalDistance, b
 // Main function to find recommended charging station
 async function findRecommendedChargingStation(start, end, batteryRange, batteryCapacity, allStations, googleMapsApiKey) {
   try {
+
     // Step 1: Calculate the full route distance using Google Maps API
     const routeData = await calculateActualRouteDistance(start, end, googleMapsApiKey);
     const totalDistance = routeData.distance;
-    
+
     // Step 2: Calculate charging waypoint using actual route geometry
-    const chargingWaypoint = await calculateChargingWaypoint(start, end, totalDistance, batteryRange, googleMapsApiKey);
-    
+    let chargingWaypoint = await calculateChargingWaypoint(start, end, totalDistance, batteryRange, googleMapsApiKey);
+
+    // Fallback: If chargingWaypoint is undefined, use straight-line interpolation
     if (!chargingWaypoint) {
+      const progressRatio = Math.min((parseFloat(batteryRange) * 0.8) / totalDistance, 0.9);
+      const targetLat = start.lat + (end.lat - start.lat) * progressRatio;
+      const targetLng = start.lng + (end.lng - start.lng) * progressRatio;
+      chargingWaypoint = {
+        lat: targetLat,
+        lng: targetLng,
+        distanceFromStart: parseFloat(batteryRange) * 0.8,
+        distanceToEnd: totalDistance - (parseFloat(batteryRange) * 0.8),
+        routeGeometry: null,
+        routeSteps: []
+      };
+    }
+
+    // Fix: Charging is needed if batteryRange < totalDistance
+    if (parseFloat(batteryRange) >= totalDistance) {
       // Calculate range and percent at arrival
       const rangeAtArrival = parseFloat(batteryRange) - totalDistance;
       const percentAtArrival = (rangeAtArrival / parseFloat(batteryCapacity)) * 100;
+
       return {
         success: true,
         needsCharging: false,
         message: "No charging needed - trip is within vehicle range",
-        totalDistance: Math.round(totalDistance * 10) / 10,
-        estimatedTime: routeData.duration, // duration in minutes
-        rangeAtArrival: Math.round(rangeAtArrival * 10) / 10,
-        percentAtArrival: Math.round(percentAtArrival * 10) / 10
+        totalDistance: Number(Math.round(totalDistance * 10) / 10),
+        estimatedTime: Number(routeData.duration), // duration in minutes
+        rangeAtArrival: Number(Math.round(rangeAtArrival * 10) / 10),
+        percentAtArrival: Number(Math.round(percentAtArrival * 10) / 10)
       };
     }
     
