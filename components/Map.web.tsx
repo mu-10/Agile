@@ -155,7 +155,14 @@ export default function MapWeb({
       }
 
       const data = await response.json();
+      console.log('Backend response - totalDistance:', data.totalDistance);
       setChargingStopInfo(data);
+      
+      // Use backend's Google Maps distance instead of frontend calculation
+      if (data.totalDistance && typeof data.totalDistance === 'number') {
+        console.log('Using backend distance:', data.totalDistance, 'km');
+        setDistance(`${data.totalDistance} km`);
+      }
       
       if (data.needsCharging && data.chargingStation) {
         setAutoSelectedChargingStation(data.chargingStation);
@@ -709,7 +716,9 @@ export default function MapWeb({
             if (startCoords && endCoords) {
               // Store the original full route for station filtering
               setDirectionsResponse(result);
-              setDistance(leg.distance?.text || null);
+              console.log('Frontend Google Maps distance:', leg.distance?.text, 'value:', leg.distance?.value);
+              // Don't set distance here - wait for backend response
+              // setDistance(leg.distance?.text || null);
               setDuration(leg.duration?.text || null);
               
               // Find charging stop (but don't override the main route)
@@ -717,7 +726,8 @@ export default function MapWeb({
             } else {
               // Show direct route anyway
               setDirectionsResponse(result);
-              setDistance(leg.distance?.text || null);
+              // Don't set distance here - wait for backend response
+              // setDistance(leg.distance?.text || null);
               setDuration(leg.duration?.text || null);
               setShowChargingRoute(false);
               setAutoSelectedChargingStation(null);
@@ -726,7 +736,8 @@ export default function MapWeb({
           } else {
             // No charging needed - use direct route
             setDirectionsResponse(result);
-            setDistance(leg.distance?.text || null);
+            // Don't set distance here - wait for backend response
+            // setDistance(leg.distance?.text || null);
             setDuration(leg.duration?.text || null);
             setShowChargingRoute(false);
             setAutoSelectedChargingStation(null);
