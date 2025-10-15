@@ -1,5 +1,5 @@
 // Test script for the new charging logic
-const { findRecommendedChargingStation } = require('./services/chargingRecommendationService.js');
+const { findRecommendedChargingStation } = require('../services/chargingRecommendationService.js');
 
 async function testChargingLogic() {
   const start = { lat: 55.6059, lng: 13.0007 }; // Malmö
