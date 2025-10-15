@@ -4,7 +4,7 @@ import {
   Marker,
   useJsApiLoader,
 } from "@react-google-maps/api";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_ENDPOINTS, MAPS_CONFIG, UI_CONFIG } from "../config/appConfig";
 import { connectorTypes as staticConnectorTypes } from "../services/stationConnectors";
 import ConnectorTypeDropdown from "./ConnectorTypeDropdown";
@@ -500,18 +500,76 @@ export default function MapWeb({
 
 
 
-  // Removed getDistanceToRoute - this logic is now handled by the backend
+  // Function to calculate distance from a point to the route path
+  const getDistanceToRoute = useCallback((
+    stationLat: number,
+    stationLng: number,
+    route: google.maps.DirectionsResult
+  ): number => {
+    if (!route || !route.routes[0]) return Infinity;
 
-  // Simple connector type filter - proximity filtering is now done by backend
-  function filteredStations() {
+    const path = route.routes[0].overview_path;
+    if (!path || path.length === 0) return Infinity;
+
+    let minDistance = Infinity;
+    
+    // Check distance to each point in the route path
+    for (let i = 0; i < path.length; i++) {
+      const routePoint = path[i];
+      const distance = google.maps.geometry.spherical.computeDistanceBetween(
+        new google.maps.LatLng(stationLat, stationLng),
+        routePoint
+      );
+      
+      if (distance < minDistance) {
+        minDistance = distance;
+      }
+      
+      // Also check distance to line segments between consecutive points
+      if (i < path.length - 1) {
+        const nextPoint = path[i + 1];
+        const projection = google.maps.geometry.spherical.interpolate(
+          routePoint,
+          nextPoint,
+          0.5 // Check midpoint of segment
+        );
+        const segmentDistance = google.maps.geometry.spherical.computeDistanceBetween(
+          new google.maps.LatLng(stationLat, stationLng),
+          projection
+        );
+        
+        if (segmentDistance < minDistance) {
+          minDistance = segmentDistance;
+        }
+      }
+    }
+    
+    return minDistance;
+  }, []);
+
+  // Enhanced station filter - considers both connector type and route proximity
+  const filteredStations = useMemo(() => {
     if (selectedConnectorTypes.length === 0) {
       return [];
     }
-    // Just filter by connector type - backend handles route proximity
-    return stations.filter(station =>
+    
+    // Filter by connector type first
+    let filtered = stations.filter(station =>
       station.connections && station.connections.some((conn: any) => selectedConnectorTypes.includes(conn.type))
     );
-  }
+    
+    // If we have a calculated route, also filter by proximity (2km = 2000m)
+    if (directionsResponse && filtered.length > 0) {
+      const PROXIMITY_THRESHOLD = 2000; // 2km in meters
+      
+      filtered = filtered.filter(station => {
+        const distance = getDistanceToRoute(station.latitude, station.longitude, directionsResponse);
+        return distance <= PROXIMITY_THRESHOLD;
+      });
+    }
+    
+    return filtered;
+  }, [stations, selectedConnectorTypes, directionsResponse, getDistanceToRoute]);
 
   // Function to fetch stations based on map bounds
   const fetchStationsInBounds = useCallback(
@@ -1205,7 +1263,7 @@ export default function MapWeb({
 
         {/* Charging station markers - filtered by route proximity */}
         {(() => {
-          const stationsToRender = filteredStations();
+          const stationsToRender = filteredStations;
           
           if (loadingStations) {
             return null;
@@ -1240,7 +1298,7 @@ export default function MapWeb({
         })()}
 
         {/* Recommended charging station marker - always show even if not in filtered list */}
-        {showRecommendedLocations && recommendedStation && !filteredStations().some(station => station.id === recommendedStation.id) && (
+        {showRecommendedLocations && recommendedStation && !filteredStations.some(station => station.id === recommendedStation.id) && (
           <Marker
             key={`recommended-${recommendedStation.id}`}
             position={{ lat: recommendedStation.latitude, lng: recommendedStation.longitude }}

@@ -101,7 +101,7 @@ function mapStationsToRoute(routePoints, routeCumKm, stations, maxDeviationKm = 
 }
 
 // Greedy planner: pick farthest reachable station along the route until destination reachable
-function planGreedyStops({ routePoints, totalRouteKm, allStations, startRouteKm = 0, currentRangeKm, maxRangeKm, safeFactor = 0.8, maxStops = 10 }) {
+function planGreedyStops({ routePoints, totalRouteKm, allStations, startRouteKm = 0, currentRangeKm, maxRangeKm, safeFactor = 0.8, maxStops = 10, chargePercent = 0.8 }) {
   const cumKm = buildCumulativeRouteKm(routePoints);
 
   let curKm = startRouteKm;
@@ -198,15 +198,15 @@ function planGreedyStops({ routePoints, totalRouteKm, allStations, startRouteKm 
 
     stops.push(next);
 
-    // move to that station: update current position and recharge to full
+    // move to that station: update current position and recharge to specified percentage (default 80%)
     curKm = next.routeKm;
-    range = maxRangeKm;
+    range = maxRangeKm * chargePercent;
 
     // can we reach destination now? (apply safety factor to remaining range)
     const remainingDistance = totalRouteKm - curKm;
     const usableRange = range * safeFactor;
     
-    console.log(`  After charging at ${next.title}: position ${curKm.toFixed(1)}km, remaining ${remainingDistance.toFixed(1)}km, usable range ${usableRange.toFixed(1)}km`);
+    console.log(`  After charging to ${(chargePercent * 100).toFixed(0)}% at ${next.title}: position ${curKm.toFixed(1)}km, remaining ${remainingDistance.toFixed(1)}km, usable range ${usableRange.toFixed(1)}km`);
     
     if (usableRange >= remainingDistance) {
       console.log(`  ✅ Can reach destination from this station`);
@@ -379,11 +379,12 @@ function isStationNearRoute(station, routePoints, maxDeviationKm = 2) {
 }
 
 // High-level orchestrator: accepts routePoints or fallback straight-line + stations list
-async function findRecommendedChargingStation_v2(start, end, batteryRangeKm, batteryCapacityKm, allStations, routePoints = []) {
+async function findRecommendedChargingStation_v2(start, end, batteryRangeKm, batteryCapacityKm, allStations, routePoints = [], chargePercent = 0.8) {
   console.log(`\n=== NEW CHARGING LOGIC V2 ===`);
   console.log(`Route: ${start.lat},${start.lng} -> ${end.lat},${end.lng}`);
   console.log(`Current Battery Range: ${batteryRangeKm} km`);
   console.log(`Maximum Battery Capacity: ${batteryCapacityKm} km`);
+  console.log(`Charging to: ${(chargePercent * 100).toFixed(0)}% of capacity`);
   
   // If routePoints not provided, build trivial route from start -> end
   if (!routePoints || routePoints.length < 2) {
@@ -438,8 +439,8 @@ async function findRecommendedChargingStation_v2(start, end, batteryRangeKm, bat
     };
   }
 
-  // If full charge would cover the trip, recommend a single convenient station near start (within 50km & near route)
-  if (batteryCapacityKm >= totalRouteKm) {
+  // If charging to specified percentage would cover the trip, recommend a single convenient station near start (within 50km & near route)
+  if (batteryCapacityKm * chargePercent >= totalRouteKm) {
     console.log(`✅ SINGLE CHARGE NEEDED`);
     // find station near the start (within 50 km straight-line) and near route
     const nearStart = stationsOnRoute
@@ -480,7 +481,8 @@ async function findRecommendedChargingStation_v2(start, end, batteryRangeKm, bat
     currentRangeKm: batteryRangeKm,
     maxRangeKm: batteryCapacityKm,
     safeFactor: 0.8,
-    maxStops: 10 // Increased from 6 to handle longer routes
+    maxStops: 10, // Increased from 6 to handle longer routes
+    chargePercent: chargePercent // Pass the charging percentage
   });
 
   if (!plan.reachable) {
@@ -520,7 +522,7 @@ async function findRecommendedChargingStation_v2(start, end, batteryRangeKm, bat
 }
 
 // Wrapper to maintain backward compatibility with existing API
-async function findRecommendedChargingStation(start, end, batteryRange, batteryCapacity, allStations, googleMapsApiKey) {
+async function findRecommendedChargingStation(start, end, batteryRange, batteryCapacity, allStations, googleMapsApiKey, chargePercent = 0.8) {
   try {
     // Convert string inputs to numbers
     const batteryRangeKm = parseFloat(batteryRange);
@@ -548,7 +550,8 @@ async function findRecommendedChargingStation(start, end, batteryRange, batteryC
       batteryRangeKm, 
       batteryCapacityKm, 
       allStations, 
-      routePoints
+      routePoints,
+      chargePercent
     );
     
     // Add estimatedTime to result for backward compatibility
