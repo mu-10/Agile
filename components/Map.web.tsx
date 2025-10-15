@@ -1,9 +1,9 @@
 import {
-  DirectionsRenderer,
-  GoogleMap,
-  InfoWindow,
-  Marker,
-  useJsApiLoader,
+    DirectionsRenderer,
+    GoogleMap,
+    InfoWindow,
+    Marker,
+    useJsApiLoader,
 } from "@react-google-maps/api";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { API_ENDPOINTS, DEFAULTS, MAPS_CONFIG, UI_CONFIG } from "../config/appConfig";
@@ -80,6 +80,7 @@ export default function MapWeb({
   const [showChargingRoute, setShowChargingRoute] = useState<boolean>(false); // Show charging route UI
   const [stableBestStation, setStableBestStation] = useState<any | null>(null); // Stable auto-selected station
   const [alternativeStations, setAlternativeStations] = useState<any[]>([]); // Alternative charging stations
+  const [allChargingStops, setAllChargingStops] = useState<any[]>([]); // All charging stops for multi-stop routes
   const [showAlternatives, setShowAlternatives] = useState<boolean>(false); // Show alternative stations
   const [showChargingPanels, setShowChargingPanels] = useState<boolean>(false); // Stable UI state
   const [cachedRouteKey, setCachedRouteKey] = useState<string>(""); // Cache key for route
@@ -141,6 +142,10 @@ export default function MapWeb({
         batteryCapacity
       };
       
+      console.log('=== FRONTEND REQUEST ===');
+      console.log('Sending to backend:', JSON.stringify(requestBody, null, 2));
+      console.log('API endpoint:', API_ENDPOINTS.findChargingStop());
+      
       const response = await fetch(API_ENDPOINTS.findChargingStop(), {
         method: 'POST',
         headers: {
@@ -155,24 +160,61 @@ export default function MapWeb({
       }
 
       const data = await response.json();
-      console.log('Backend response - totalDistance:', data.totalDistance);
+      console.log('=== BACKEND RESPONSE ===');
+      console.log('Full response:', JSON.stringify(data, null, 2));
+      console.log('needsCharging:', data.needsCharging);
+      console.log('chargingStation:', data.chargingStation?.title || 'None');
+      console.log('totalDistance:', data.totalDistance);
+      console.log('scenario:', data.scenario);
       setChargingStopInfo(data);
       
-      // Use backend's Google Maps distance instead of frontend calculation
+      // Use backend's Google Maps distance and time instead of frontend calculation
       if (data.totalDistance && typeof data.totalDistance === 'number') {
         console.log('Using backend distance:', data.totalDistance, 'km');
         setDistance(`${data.totalDistance} km`);
       }
       
-      if (data.needsCharging && data.chargingStation) {
-        setAutoSelectedChargingStation(data.chargingStation);
-        setAlternativeStations(data.alternatives || []);
-        setShowChargingRoute(true);
-        
-        // Calculate route via charging station
-        await calculateChargingRoute(data.chargingStation, startCoords, endCoords);
+      if (data.estimatedTime && typeof data.estimatedTime === 'number') {
+        console.log('Using backend time:', data.estimatedTime, 'minutes');
+        const hours = Math.floor(data.estimatedTime / 60);
+        const minutes = data.estimatedTime % 60;
+        if (hours > 0) {
+          setDuration(`${hours}h ${minutes} min`);
+        } else {
+          setDuration(`${minutes} min`);
+        }
+      }
+      
+      if (data.needsCharging) {
+        if (data.chargingStops && data.chargingStops.length > 0) {
+          // Multiple charging stops - use the new algorithm result
+          console.log('Multiple charging stops detected:', data.chargingStops.length);
+          setAutoSelectedChargingStation(data.chargingStops[0]); // Primary stop
+          setAllChargingStops(data.chargingStops); // All stops for display
+          setAlternativeStations(data.alternatives || []); // Keep alternatives separate
+          setShowChargingRoute(true);
+          
+          // Calculate route through multiple charging stops
+          await calculateMultiStopRoute(data.chargingStops, startCoords, endCoords);
+        } else if (data.chargingStation) {
+          // Single charging stop (backward compatibility)
+          console.log('Single charging stop detected');
+          setAutoSelectedChargingStation(data.chargingStation);
+          setAllChargingStops([data.chargingStation]); // Single stop in array
+          setAlternativeStations(data.alternatives || []);
+          setShowChargingRoute(true);
+          
+          // Calculate route via single charging station
+          await calculateChargingRoute(data.chargingStation, startCoords, endCoords);
+        } else {
+          setAutoSelectedChargingStation(null);
+          setAllChargingStops([]);
+          setShowChargingRoute(false);
+          setChargingRouteResponse(null);
+        }
       } else {
         setAutoSelectedChargingStation(null);
+        setAllChargingStops([]);
         setShowChargingRoute(false);
         setChargingRouteResponse(null);
       }
@@ -182,6 +224,7 @@ export default function MapWeb({
       console.error("Error finding charging stop:", error);
       setChargingStopInfo(null);
       setAutoSelectedChargingStation(null);
+      setAllChargingStops([]);
       setShowChargingRoute(false);
       setBackendError(true);
     } finally {
@@ -289,6 +332,77 @@ export default function MapWeb({
       console.error("Error calculating charging route:", error);
     }
   }, [duration]);
+
+  // Function to calculate route through multiple charging stops
+  const calculateMultiStopRoute = useCallback(async (
+    chargingStops: any[],
+    startCoords: google.maps.LatLngLiteral, 
+    endCoords: google.maps.LatLngLiteral
+  ) => {
+    if (!directionsServiceRef.current || !chargingStops || chargingStops.length === 0) return;
+    
+    try {
+      console.log(`Calculating route through ${chargingStops.length} charging stops`);
+      
+      // Create waypoints from charging stops
+      const waypoints = chargingStops.map(stop => ({
+        location: { lat: stop.latitude, lng: stop.longitude },
+        stopover: true
+      }));
+
+      // Calculate route with multiple waypoints
+      await new Promise<void>((resolve, reject) => {
+        directionsServiceRef.current!.route(
+          {
+            origin: startCoords,
+            destination: endCoords,
+            waypoints: waypoints,
+            travelMode: google.maps.TravelMode.DRIVING,
+            optimizeWaypoints: false, // Keep the order from the algorithm
+          },
+          (result, status) => {
+            if (status === "OK" && result) {
+              console.log('Multi-stop route calculated successfully');
+              setDirectionsResponse(result);
+              
+              // Calculate total distance and duration including charging time
+              let totalDist = 0;
+              let totalDur = 0;
+              result.routes[0].legs.forEach(leg => {
+                if (leg.distance) totalDist += leg.distance.value;
+                if (leg.duration) totalDur += leg.duration.value;
+              });
+              
+              // Add estimated charging time for each stop (except the last one which is destination)
+              const totalChargingTime = chargingStops.length * 30 * 60; // 30 minutes per stop in seconds
+              const totalTravelTime = Math.round((totalDur + totalChargingTime) / 60); // in minutes
+              
+              console.log(`Total route: ${(totalDist/1000).toFixed(1)}km, ${totalTravelTime}min (including ${chargingStops.length} charging stops)`);
+              
+              setDistance(`${(totalDist / 1000).toFixed(1)} km`);
+              setDuration(`${totalTravelTime} min`);
+              
+              resolve();
+            } else {
+              console.error("Multi-stop route calculation failed:", status);
+              // Fallback to single stop if multi-stop fails
+              if (chargingStops.length > 0) {
+                calculateChargingRoute(chargingStops[0], startCoords, endCoords);
+              }
+              reject(new Error(`Multi-stop route calculation failed: ${status}`));
+            }
+          }
+        );
+      });
+    } catch (error) {
+      console.error("Error calculating multi-stop route:", error);
+      // Fallback to single stop route
+      if (chargingStops.length > 0) {
+        console.log('Falling back to single stop route');
+        await calculateChargingRoute(chargingStops[0], startCoords, endCoords);
+      }
+    }
+  }, [calculateChargingRoute]);
 
   const [stationReachability, setStationReachability] = useState<{[key: string]: {reachable: boolean, message: string}}>({});
 
@@ -731,6 +845,7 @@ export default function MapWeb({
               setDuration(leg.duration?.text || null);
               setShowChargingRoute(false);
               setAutoSelectedChargingStation(null);
+              setAllChargingStops([]);
               setChargingRouteResponse(null);
             }
           } else {
@@ -741,6 +856,7 @@ export default function MapWeb({
             setDuration(leg.duration?.text || null);
             setShowChargingRoute(false);
             setAutoSelectedChargingStation(null);
+            setAllChargingStops([]);
             setChargingRouteResponse(null);
           }
         } else {
@@ -1052,8 +1168,40 @@ export default function MapWeb({
           />
         )}
 
-        {/* Auto-selected charging station marker */}
-        {showRecommendedLocations && autoSelectedChargingStation && (
+        {/* All charging stops markers for multi-stop routes */}
+        {showRecommendedLocations && allChargingStops.map((stop, index) => (
+          <Marker
+            key={`charging-stop-${stop.id}-${index}`}
+            position={{
+              lat: stop.latitude,
+              lng: stop.longitude,
+            }}
+            title={`Stop ${index + 1}: ${stop.title}`}
+            icon={{
+              url: index === 0 
+                ? "https://maps.google.com/mapfiles/ms/icons/yellow-dot.png" // Yellow for first stop
+                : "https://maps.google.com/mapfiles/ms/icons/orange-dot.png", // Orange for additional stops
+              scaledSize: new window.google.maps.Size(40, 40),
+            }}
+            onClick={() => {
+              // Set as selected station for info window
+              setSelectedStation(stop);
+              
+              // Center map on the station
+              if (map) {
+                map.setCenter({
+                  lat: stop.latitude,
+                  lng: stop.longitude,
+                });
+                map.setZoom(16); // Zoom in to show details
+              }
+            }}
+            zIndex={1000 + index} // Ensure proper layering
+          />
+        ))}
+
+        {/* Legacy auto-selected charging station marker (for backward compatibility) */}
+        {showRecommendedLocations && autoSelectedChargingStation && allChargingStops.length === 0 && (
           <Marker
             position={{
               lat: autoSelectedChargingStation.latitude,
@@ -1688,11 +1836,19 @@ export default function MapWeb({
           {!showChargingRoute && chargingStopInfo && chargingStopInfo.needsCharging === false && (
             <div style={{ marginBottom: "8px" }}>
               {(() => {
-                // Accept both number and string types, convert to number if needed
+                // Use backend values when available, otherwise calculate locally
                 const totalDistance = Number(chargingStopInfo.totalDistance);
                 const batteryRangeStart = Number(batteryRange);
-                const rangeAtArrival = batteryRangeStart - totalDistance;
-                const percentAtArrival = batteryRangeStart > 0 ? (rangeAtArrival / batteryRangeStart) * 100 : 0;
+                
+                // Prefer backend-calculated values for accuracy
+                const rangeAtArrival = chargingStopInfo.rangeAtArrival !== undefined 
+                  ? Number(chargingStopInfo.rangeAtArrival)
+                  : batteryRangeStart - totalDistance;
+                  
+                const percentAtArrival = chargingStopInfo.percentAtArrival !== undefined
+                  ? Number(chargingStopInfo.percentAtArrival)
+                  : batteryRangeStart > 0 ? (rangeAtArrival / batteryRangeStart) * 100 : 0;
+                
                 const estimatedTime = Number(chargingStopInfo.estimatedTime);
                 const valid = [estimatedTime, rangeAtArrival, percentAtArrival, totalDistance].every(v => typeof v === 'number' && !isNaN(v));
                 if (valid) {

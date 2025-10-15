@@ -3,7 +3,7 @@ const config = require('./config');
 const express = require("express");
 const cors = require("cors");
 const ChargingStationDB = require('./services/databaseService');
-const { findRecommendedChargingStation, calculateDistance } = require('./services/chargingRecommendationService');
+const { findRecommendedChargingStation, findRecommendedChargingStation_v2, calculateDistance } = require('./services/chargingRecommendationService');
 const path = require('path');
 const app = express();
 
@@ -134,7 +134,7 @@ app.post("/api/find-charging-stop", async (req, res) => {
       const east = Math.max(start.lng, end.lng) + bufferDegrees;
       const west = Math.min(start.lng, end.lng) - bufferDegrees;
       
-      stations = db.getStationsInBounds(north, south, east, west, 2000);
+      stations = db.getStationsInBounds(north, south, east, west, 5000); // Use same limit as frontend
 
       if (stations.length === 0) {
         return res.status(404).json({
@@ -153,31 +153,36 @@ app.post("/api/find-charging-stop", async (req, res) => {
       });
     }
 
+    // Use the new v2 algorithm with improved route projection
     const result = await findRecommendedChargingStation(
       start,                    // { lat, lng }
       end,                      // { lat, lng }
       batteryRange,             // string/number
       batteryCapacity,          // string/number  
-      stations,                 // array of stations
+      stations,                 // array of stations (now 5000 instead of 2000)
       config.external.googleMapsApiKey
     );
     
     // Transform the response to match frontend expectations
-    if (result.success && result.station) {
+    if (result.success && result.needsCharging) {
       const response = {
         needsCharging: true,
-        chargingStation: result.station,
+        chargingStation: result.station || (result.chargingStops && result.chargingStops[0]),
+        chargingStops: result.chargingStops || [],
         alternatives: result.alternatives || [],
         totalDistance: result.totalDistance,
+        estimatedTime: result.estimatedTime,
+        scenario: result.scenario,
         chargingWaypoint: result.chargingWaypoint,
         message: result.message
       };
       res.json(response);
-    } else {
-      // No charging needed or error case
+    } else if (result.success && !result.needsCharging) {
+      // No charging needed - can reach destination with current battery
       const response = {
         needsCharging: false,
         chargingStation: null,
+        chargingStops: [],
         alternatives: [],
         totalDistance: typeof result.totalDistance === 'number' ? result.totalDistance : Number(result.totalDistance) || 0,
         estimatedTime: typeof result.estimatedTime === 'number' ? result.estimatedTime : Number(result.estimatedTime) || 0,
@@ -186,6 +191,18 @@ app.post("/api/find-charging-stop", async (req, res) => {
         message: result.message || "No charging stop needed for this route"
       };
       res.json(response);
+    } else {
+      // Error case
+      const response = {
+        needsCharging: false,
+        chargingStation: null,
+        chargingStops: [],
+        alternatives: [],
+        error: true,
+        message: result.message || "Unable to find suitable charging stations for this route",
+        reason: result.reason
+      };
+      res.status(400).json(response);
     }
 
   } catch (err) {
