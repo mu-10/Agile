@@ -167,14 +167,19 @@ function planGreedyStops({ routePoints, totalRouteKm, allStations, startRouteKm 
 
     // pick the furthest station along route (greedy), but ensure minimum progress
     const minProgressKm = 20; // Require at least 20km progress to avoid getting stuck
-    const candidateStations = reachableStations.filter(s => s.routeKm >= curKm + minProgressKm);
+    const forwardStations = reachableStations.filter(s => s.routeKm > curKm); // Only forward progress
     
     let next;
-    if (candidateStations.length > 0) {
-      next = candidateStations[candidateStations.length - 1]; // Furthest with min progress
+    if (forwardStations.length > 0) {
+      // Prefer stations with good progress, but take any forward progress if needed
+      const goodProgressStations = forwardStations.filter(s => s.routeKm >= curKm + minProgressKm);
+      next = goodProgressStations.length > 0 
+        ? goodProgressStations[goodProgressStations.length - 1] // Furthest with good progress
+        : forwardStations[forwardStations.length - 1]; // Furthest with any forward progress
     } else {
-      // If no stations meet min progress, pick the furthest available
-      next = reachableStations[reachableStations.length - 1];
+      // No forward stations - this is a gap in coverage
+      console.log(`  ❌ No stations ahead of current position ${curKm.toFixed(1)}km`);
+      return { stops, reachable: false, reason: 'no_forward_stations' };
     }
     
     console.log(`  Selected: ${next.title || 'Unknown'} at ${next.routeKm.toFixed(1)}km (${next.routeDeviationKm.toFixed(1)}km from route)`);
@@ -193,13 +198,21 @@ function planGreedyStops({ routePoints, totalRouteKm, allStations, startRouteKm 
 
     stops.push(next);
 
-    // move to that station: update current position and recharge to full (but apply safeFactor for travel)
+    // move to that station: update current position and recharge to full
     curKm = next.routeKm;
     range = maxRangeKm;
 
-    // can we reach destination now?
-    if (range >= totalRouteKm - curKm) {
+    // can we reach destination now? (apply safety factor to remaining range)
+    const remainingDistance = totalRouteKm - curKm;
+    const usableRange = range * safeFactor;
+    
+    console.log(`  After charging at ${next.title}: position ${curKm.toFixed(1)}km, remaining ${remainingDistance.toFixed(1)}km, usable range ${usableRange.toFixed(1)}km`);
+    
+    if (usableRange >= remainingDistance) {
+      console.log(`  ✅ Can reach destination from this station`);
       return { stops, reachable: true };
+    } else {
+      console.log(`  🔋 Need additional charging stops`);
     }
   }
 
@@ -467,11 +480,27 @@ async function findRecommendedChargingStation_v2(start, end, batteryRangeKm, bat
     currentRangeKm: batteryRangeKm,
     maxRangeKm: batteryCapacityKm,
     safeFactor: 0.8,
-    maxStops: 6
+    maxStops: 10 // Increased from 6 to handle longer routes
   });
 
   if (!plan.reachable) {
-    console.log(`❌ Unable to plan route: ${plan.reason}`);
+    console.log(`❌ Unable to plan complete route: ${plan.reason}`);
+    
+    // If we got some stops but hit limits, return partial route with warning
+    if (plan.stops.length > 0 && plan.reason === 'too_many_stops') {
+      console.log(`⚠️  Returning partial route with ${plan.stops.length} stops`);
+      return {
+        success: true,
+        needsCharging: true,
+        scenario: 'multiple_charge_partial',
+        chargingStops: plan.stops,
+        station: plan.stops[0],
+        totalDistance: Math.round(totalRouteKm * 10) / 10,
+        warning: `Route requires more than ${plan.stops.length} charging stops. Consider using a vehicle with longer range for this route.`,
+        partial: true
+      };
+    }
+    
     return { success: false, needsCharging: true, message: 'Unable to plan route with available stations', reason: plan.reason };
   }
 

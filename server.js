@@ -111,7 +111,8 @@ app.post("/api/find-charging-stop", async (req, res) => {
       endLng, 
       batteryRange,
       batteryCapacity,
-      currentBatteryPercent = 100
+      currentBatteryPercent = 100,
+      connectorTypes = [] // Frontend can specify connector types to filter
     } = req.body;
 
     // Validate required parameters
@@ -134,12 +135,22 @@ app.post("/api/find-charging-stop", async (req, res) => {
       const east = Math.max(start.lng, end.lng) + bufferDegrees;
       const west = Math.min(start.lng, end.lng) - bufferDegrees;
       
-      stations = db.getStationsInBounds(north, south, east, west, 5000); // Use same limit as frontend
+      stations = db.getStationsInBounds(north, south, east, west, 5000);
+
+      // Filter by connector types if specified (moved from frontend)
+      if (connectorTypes.length > 0) {
+        stations = stations.filter(station =>
+          station.connections.some(conn => connectorTypes.includes(conn.type))
+        );
+        console.log(`Filtered to ${stations.length} stations with connector types:`, connectorTypes);
+      }
 
       if (stations.length === 0) {
         return res.status(404).json({
           error: "No charging stations found in route area",
-          message: "No charging stations found in the database for your route area. The database may be empty or not properly populated.",
+          message: connectorTypes.length > 0 
+            ? `No charging stations found with the selected connector types (${connectorTypes.join(', ')}) in your route area.`
+            : "No charging stations found in the database for your route area. The database may be empty or not properly populated.",
           setup_instructions: "See README.md for detailed setup instructions."
         });
       }
@@ -153,15 +164,23 @@ app.post("/api/find-charging-stop", async (req, res) => {
       });
     }
 
-    // Use the new v2 algorithm with improved route projection
+    // Use the same charging logic pattern as the test file
+    console.log('=== Backend Charging Logic (same as test file) ===');
+    console.log(`Route: ${start.lat},${start.lng} -> ${end.lat},${end.lng}`);
+    console.log(`Battery Range: ${batteryRange} km, Battery Capacity: ${batteryCapacity} km`);
+    console.log(`Found ${stations.length} stations in route area`);
+    
+    // Call the same function with same parameters as test file
     const result = await findRecommendedChargingStation(
-      start,                    // { lat, lng }
-      end,                      // { lat, lng }
-      batteryRange,             // string/number
-      batteryCapacity,          // string/number  
-      stations,                 // array of stations (now 5000 instead of 2000)
-      config.external.googleMapsApiKey
+      start,                              // { lat, lng } - same format as test
+      end,                                // { lat, lng } - same format as test  
+      parseFloat(batteryRange),           // number - same type as test
+      parseFloat(batteryCapacity),        // number - same type as test
+      stations,                           // array - same as test (but from database instead of empty array)
+      config.external.googleMapsApiKey    // string - same as test
     );
+    
+    console.log('Backend result:', JSON.stringify(result, null, 2));
     
     // Transform the response to match frontend expectations
     if (result.success && result.needsCharging) {
