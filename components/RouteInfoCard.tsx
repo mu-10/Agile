@@ -423,7 +423,11 @@ const RouteInfoCard: React.FC<RouteInfoCardProps> = ({
             Fastest route
           </div>
           <div style={styles.detailText}>
-            No charging needed • {Math.round(rangeAtArrival)} km ({Math.round(percentAtArrival)}%) range remaining
+            {rangeAtArrival <= 5 ? (
+              "No charging needed"
+            ) : (
+              `No charging needed • ${Math.round(rangeAtArrival)} km (${Math.round(percentAtArrival)}%) range remaining`
+            )}
           </div>
         </div>
       </div>
@@ -452,7 +456,11 @@ const RouteInfoCard: React.FC<RouteInfoCardProps> = ({
           </div>
           {batteryRange > 0 && (
             <div style={styles.detailText}>
-              {Math.round(remainingRange)} km range remaining
+              {remainingRange <= 5 ? (
+                "No charging needed"
+              ) : (
+                `${Math.round(remainingRange)} km range remaining`
+              )}
             </div>
           )}
         </div>

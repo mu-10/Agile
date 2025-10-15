@@ -1,13 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import {
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 import MapWeb from "../components/Map.web";
 import vehiclesData from "../data/vehicles.json";
@@ -81,6 +81,7 @@ export default function Index() {
       setBatteryRange(numericValue);
       setRangeError(numericValue === "" ? "Current range must be a number" : "");
     }
+    clearPlannedRoute(); // Clear previous route when battery range changes
   };
 
   // Handle numeric input for capacity
@@ -94,6 +95,30 @@ export default function Index() {
     } else {
       setCapacityError("");
     }
+    clearPlannedRoute(); // Clear previous route when battery capacity changes
+  };
+
+  // Clear planned route when inputs change
+  const clearPlannedRoute = () => {
+    setPlannedStart(null);
+    setPlannedEnd(null);
+    setPlannedOriginPlaceId(null);
+    setPlannedDestinationPlaceId(null);
+    setPlannedRange(0);
+  };
+
+  // Check if current inputs differ from planned route
+  const hasInputsChanged = () => {
+    const currentStart = startCoords || startInput;
+    const currentEnd = end;
+    const currentRange = Number(batteryRange) || 0;
+    
+    return (
+      plannedStart !== currentStart ||
+      plannedEnd !== currentEnd ||
+      plannedRange !== currentRange ||
+      !plannedStart || !plannedEnd || plannedRange === 0
+    );
   };
 
   // Plan button
@@ -126,6 +151,7 @@ export default function Index() {
     if (!currentLocation) return;
     const loc = currentLocation;
     setStartCoords(`${loc.lat},${loc.lng}`);
+    clearPlannedRoute(); // Clear previous route when using current location
     
     // Hide autocomplete dropdown when using current location
     setShowStartPreds(false);
@@ -196,6 +222,7 @@ export default function Index() {
     pred: google.maps.places.AutocompletePrediction,
     which: "start" | "end"
   ) => {
+    clearPlannedRoute(); // Clear previous route when location is selected
     if (which === "start") {
       setStartInput(pred.description);
       setStartCoords(null);
@@ -293,6 +320,7 @@ export default function Index() {
               setStartInput(val);
               setStartCoords(null);
               setOriginPlaceId(null);
+              clearPlannedRoute(); // Clear previous route when input changes
               if (Platform.OS === "web") {
                 setShowStartPreds(true);
                 requestPredictions(val, "start");
@@ -335,6 +363,7 @@ export default function Index() {
           onChangeText={(val) => {
             setEnd(val);
             setDestinationPlaceId(null);
+            clearPlannedRoute(); // Clear previous route when input changes
             if (Platform.OS === "web") {
               setShowEndPreds(true);
               requestPredictions(val, "end");
@@ -411,12 +440,21 @@ export default function Index() {
             color="white"
             style={{ marginRight: 4 }}
           />
-          <Text style={styles.buttonText}>Plan</Text>
+          <Text style={styles.buttonText}>
+            {hasInputsChanged() ? "Plan Route" : "Update Route"}
+          </Text>
         </Pressable>
       </View>
 
       {rangeError ? <Text style={styles.error}>{rangeError}</Text> : null}
       {capacityError ? <Text style={styles.error}>{capacityError}</Text> : null}
+      
+      {/* Show message when inputs have changed */}
+      {hasInputsChanged() && startInput && end && batteryRange && batteryCapacity && !rangeError && !capacityError ? (
+        <Text style={[styles.info, darkMode && { color: "#94a3b8" }]}>
+          Press "Plan Route" to calculate your route with current settings
+        </Text>
+      ) : null}
 
       {/* Suggestions dropdowns (web only) - only render if showing predictions */}
       {Platform.OS === "web" && ((showStartPreds && startInput.length > 0) || (showEndPreds && end.length > 0)) ? (
@@ -563,6 +601,7 @@ const styles = StyleSheet.create({
     fontFamily: "System",
   },
   error: { color: "red", fontSize: 13, marginLeft: 20, marginTop: -4 },
+  info: { color: "#1976d2", fontSize: 13, marginLeft: 20, marginTop: 4, fontStyle: "italic" },
   suggestionsContainer: {
     position: "absolute",
     zIndex: 9999,
