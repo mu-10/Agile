@@ -40,27 +40,6 @@ A project made for course DAT257 Agile software project management.
    ```
    Downloads and stores charging station data from Open Charge Map API
 
-## Functionality
-
-### Automatic charging station recommending
-
-The charging station recommendation system uses a multi-step algorithm to find optimal charging locations:
-
-- **Route Analysis**: Calculates the total trip distance using the Google Maps Directions API for accurate road distances.
-
-- **Imaginary Charging Point**: Determines an initial charging waypoint at 80% of battery range (20% remaining). This point is used as a target for optimal charging.
-
-- **Step-Back Search**: If no station is found at the imaginary point, the algorithm steps back along the route, checking each route segment for nearby stations.
-
-- **2km Radius Filtering**: At each step, stations within a 2km straight-line radius are considered as candidates.
-
-- **Straight-Line & Route Validation**: First, straight-line distance is used for quick filtering. Then, the Google Maps API is used to validate actual road distance from start to station and station to destination.
-
-- **Scoring System**: Each candidate station is scored based on detour distance, battery optimization, charging speed, number of charging points, and total trip time. The scoring system heavily penalizes detours and rewards stations with minimal detour and high battery remaining.
-
-- **Optimal Selection**: The station with the highest efficiency score is selected, ensuring minimal detour and sufficient battery reserves to complete the journey.
-
-
 ## Testing
 
 ### Running Tests
