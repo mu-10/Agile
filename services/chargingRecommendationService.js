@@ -222,51 +222,20 @@ function planGreedyStops({ routePoints, totalRouteKm, allStations, startRouteKm 
 // Calculate actual Google Maps route distance and get route geometry
 async function calculateActualRouteDistance(start, end, googleMapsApiKey) {
   if (!googleMapsApiKey) {
+    console.warn('Google Maps API key not provided - falling back to approximation');
     const straightDistance = calculateStraightLineDistance(start.lat, start.lng, end.lat, end.lng);
     
-    // Create a more realistic route approximation for Sweden (following E6/E4 highways)
+    // Create a generic route approximation with interpolated points
     const routePoints = [];
     
-    // For Göteborg to Stockholm, approximate the E6 -> E20 -> E4 route
-    if (start.lat > 57.5 && start.lat < 58 && end.lat > 59 && end.lat < 60) {
-      console.log('Using Sweden E6/E4 highway approximation');
-      
-      // Key waypoints approximating the highway route
-      const waypoints = [
-        start, // Göteborg
-        { lat: 57.8, lng: 12.1 }, // North of Göteborg on E6
-        { lat: 58.3, lng: 11.9 }, // Uddevalla area
-        { lat: 58.7, lng: 12.8 }, // Towards E20
-        { lat: 58.9, lng: 13.8 }, // On E20
-        { lat: 59.0, lng: 15.0 }, // Continuing east on E20
-        { lat: 59.2, lng: 16.5 }, // Approaching E4
-        { lat: 59.25, lng: 17.5 }, // On E4 towards Stockholm
-        end // Stockholm
-      ];
-      
-      // Add interpolated points between waypoints
-      for (let i = 0; i < waypoints.length - 1; i++) {
-        const wp1 = waypoints[i];
-        const wp2 = waypoints[i + 1];
-        
-        // Add points between each waypoint
-        const segmentPoints = 5;
-        for (let j = 0; j <= segmentPoints; j++) {
-          const ratio = j / segmentPoints;
-          const lat = wp1.lat + (wp2.lat - wp1.lat) * ratio;
-          const lng = wp1.lng + (wp2.lng - wp1.lng) * ratio;
-          routePoints.push({ lat, lng });
-        }
-      }
-    } else {
-      // Fallback to straight-line for other routes
-      const numPoints = Math.max(10, Math.floor(straightDistance / 20));
-      for (let i = 0; i <= numPoints; i++) {
-        const ratio = i / numPoints;
-        const lat = start.lat + (end.lat - start.lat) * ratio;
-        const lng = start.lng + (end.lng - start.lng) * ratio;
-        routePoints.push({ lat, lng });
-      }
+    // Create a smooth approximation by interpolating points between start and end
+    // Use more points for longer distances to get better station proximity calculations
+    const numPoints = Math.max(10, Math.floor(straightDistance / 20));
+    for (let i = 0; i <= numPoints; i++) {
+      const ratio = i / numPoints;
+      const lat = start.lat + (end.lat - start.lat) * ratio;
+      const lng = start.lng + (end.lng - start.lng) * ratio;
+      routePoints.push({ lat, lng });
     }
     
     console.log(`Created ${routePoints.length} route points for highway approximation`);
@@ -278,13 +247,17 @@ async function calculateActualRouteDistance(start, end, googleMapsApiKey) {
     };
   }
 
+  console.log('Using Google Maps API for route calculation');
+
   try {
     const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${start.lat},${start.lng}&destination=${end.lat},${end.lng}&mode=driving&alternatives=false&key=${googleMapsApiKey}`;
     
+    console.log('Making Google Maps API request...');
     const response = await fetch(url);
     const data = await response.json();
 
     if (data.status === 'OK' && data.routes.length > 0) {
+      console.log('✅ Google Maps API returned valid route data');
       const route = data.routes[0];
       const leg = route.legs[0];
       
@@ -294,6 +267,7 @@ async function calculateActualRouteDistance(start, end, googleMapsApiKey) {
         // Decode polyline to get route coordinates
         const decoded = decodePolyline(route.overview_polyline.points);
         routePoints.push(...decoded);
+        console.log(`Decoded ${decoded.length} route points from Google Maps polyline`);
       }
       
       return {
@@ -302,19 +276,22 @@ async function calculateActualRouteDistance(start, end, googleMapsApiKey) {
         routePoints: routePoints
       };
     } else {
+      console.warn(`Google Maps API error: ${data.status} - ${data.error_message || 'Unknown error'}`);
+      console.log('Falling back to straight-line calculation');
       const straightDistance = calculateStraightLineDistance(start.lat, start.lng, end.lat, end.lng);
       return {
-        distance: straightDistance,
-        duration: Math.round((straightDistance / 80) * 60),
+        distance: straightDistance * 1.2, // Apply highway factor
+        duration: Math.round((straightDistance * 1.2 / 80) * 60),
         routePoints: []
       };
     }
   } catch (error) {
-    console.error('Route calculation error:', error);
+    console.error('Google Maps API request failed:', error.message);
+    console.log('Falling back to straight-line calculation');
     const straightDistance = calculateStraightLineDistance(start.lat, start.lng, end.lat, end.lng);
     return {
-      distance: straightDistance,
-      duration: Math.round((straightDistance / 80) * 60),
+      distance: straightDistance * 1.2, // Apply highway factor
+      duration: Math.round((straightDistance * 1.2 / 80) * 60),
       routePoints: []
     };
   }
@@ -386,16 +363,17 @@ async function findRecommendedChargingStation_v2(start, end, batteryRangeKm, bat
   console.log(`Maximum Battery Capacity: ${batteryCapacityKm} km`);
   console.log(`Charging to: ${(chargePercent * 100).toFixed(0)}% of capacity`);
   
-  // If routePoints not provided, build trivial route from start -> end
+  // If routePoints not provided, this should not happen now since we always try Google Maps first
   if (!routePoints || routePoints.length < 2) {
-    console.log(`No route points provided, using straight-line approximation`);
-    // approximate route as straight line
+    console.warn(`⚠️  No route points provided - this should not happen with Google Maps integration`);
+    // Emergency fallback: create simple route from start -> end
     routePoints = [
       { lat: start.lat, lng: start.lng },
       { lat: end.lat, lng: end.lng }
     ];
+    console.log(`Created emergency fallback route with ${routePoints.length} points`);
   } else {
-    console.log(`Using provided route with ${routePoints.length} points`);
+    console.log(`✅ Using route with ${routePoints.length} points (Google Maps or approximation)`);
   }
 
   const cumKm = buildCumulativeRouteKm(routePoints);
@@ -528,19 +506,38 @@ async function findRecommendedChargingStation(start, end, batteryRange, batteryC
     const batteryRangeKm = parseFloat(batteryRange);
     const batteryCapacityKm = parseFloat(batteryCapacity);
     
-    // Get route points from Google Maps if available
+    // Always try to get route points from Google Maps API first
     let routePoints = [];
     let estimatedTime = null;
+    let actualDistance = null;
+    
+    console.log('🗺️  Attempting to get route data from Google Maps API...');
     
     if (googleMapsApiKey) {
       const routeData = await calculateActualRouteDistance(start, end, googleMapsApiKey);
       routePoints = routeData.routePoints || [];
       estimatedTime = Math.round(routeData.duration);
+      actualDistance = routeData.distance;
+      
+      if (routePoints.length > 0) {
+        console.log(`✅ Using Google Maps route data with ${routePoints.length} points`);
+      } else {
+        console.log('⚠️  Google Maps API available but no route points returned');
+      }
+    } else {
+      console.log('❌ No Google Maps API key provided');
     }
     
-    // If no Google Maps route points, create approximation
+    // Only fall back to approximation if Google Maps completely failed
     if (routePoints.length === 0) {
+      console.log('📍 Creating route approximation as fallback...');
       routePoints = await createRouteApproximation(start, end);
+      
+      // Calculate distance from approximation if we don't have it from Google Maps
+      if (!actualDistance) {
+        const cumKm = buildCumulativeRouteKm(routePoints);
+        actualDistance = cumKm[cumKm.length - 1];
+      }
     }
     
     // Call the new v2 function
@@ -554,9 +551,15 @@ async function findRecommendedChargingStation(start, end, batteryRange, batteryC
       chargePercent
     );
     
-    // Add estimatedTime to result for backward compatibility
-    if (estimatedTime && result.success) {
-      result.estimatedTime = estimatedTime;
+    // Add additional data to result
+    if (result.success) {
+      if (estimatedTime) {
+        result.estimatedTime = estimatedTime;
+      }
+      if (actualDistance) {
+        result.totalDistance = Math.round(actualDistance * 10) / 10;
+      }
+      result.usedGoogleMaps = googleMapsApiKey && routePoints.length > 0;
     }
     
     return result;
@@ -571,53 +574,45 @@ async function findRecommendedChargingStation(start, end, batteryRange, batteryC
 async function createRouteApproximation(start, end) {
   const straightDistance = haversineKm(start.lat, start.lng, end.lat, end.lng);
   
-  // Create a more realistic route approximation for Sweden (following E6/E4 highways)
+  // Create a generic route approximation with interpolated points
   const routePoints = [];
   
-  // For Göteborg to Stockholm, approximate the E6 -> E20 -> E4 route
-  if (start.lat > 57.5 && start.lat < 58 && end.lat > 59 && end.lat < 60) {
-    console.log('Using Sweden E6/E4 highway approximation');
-    
-    // Key waypoints approximating the highway route
-    const waypoints = [
-      start, // Göteborg
-      { lat: 57.8, lng: 12.1 }, // North of Göteborg on E6
-      { lat: 58.3, lng: 11.9 }, // Uddevalla area
-      { lat: 58.7, lng: 12.8 }, // Towards E20
-      { lat: 58.9, lng: 13.8 }, // On E20
-      { lat: 59.0, lng: 15.0 }, // Continuing east on E20
-      { lat: 59.2, lng: 16.5 }, // Approaching E4
-      { lat: 59.25, lng: 17.5 }, // On E4 towards Stockholm
-      end // Stockholm
-    ];
-    
-    // Add interpolated points between waypoints
-    for (let i = 0; i < waypoints.length - 1; i++) {
-      const wp1 = waypoints[i];
-      const wp2 = waypoints[i + 1];
-      
-      // Add points between each waypoint
-      const segmentPoints = 5;
-      for (let j = 0; j <= segmentPoints; j++) {
-        const ratio = j / segmentPoints;
-        const lat = wp1.lat + (wp2.lat - wp1.lat) * ratio;
-        const lng = wp1.lng + (wp2.lng - wp1.lng) * ratio;
-        routePoints.push({ lat, lng });
-      }
-    }
-  } else {
-    // Fallback to straight-line for other routes
-    const numPoints = Math.max(10, Math.floor(straightDistance / 20));
-    for (let i = 0; i <= numPoints; i++) {
-      const ratio = i / numPoints;
-      const lat = start.lat + (end.lat - start.lat) * ratio;
-      const lng = start.lng + (end.lng - start.lng) * ratio;
-      routePoints.push({ lat, lng });
-    }
+  // Create a smooth approximation by interpolating points between start and end
+  // Use more points for longer distances to get better station proximity calculations
+  const numPoints = Math.max(10, Math.floor(straightDistance / 20));
+  for (let i = 0; i <= numPoints; i++) {
+    const ratio = i / numPoints;
+    const lat = start.lat + (end.lat - start.lat) * ratio;
+    const lng = start.lng + (end.lng - start.lng) * ratio;
+    routePoints.push({ lat, lng });
   }
   
   console.log(`Created ${routePoints.length} route points for approximation`);
   return routePoints;
+}
+
+// Enhanced distance calculation that prefers Google Maps over straight-line
+async function calculateOptimalDistance(start, end, googleMapsApiKey = null) {
+  if (googleMapsApiKey) {
+    try {
+      const routeData = await calculateActualRouteDistance(start, end, googleMapsApiKey);
+      return {
+        distance: routeData.distance,
+        isActualRoute: true,
+        duration: routeData.duration
+      };
+    } catch (error) {
+      console.warn('Google Maps distance calculation failed, using straight-line:', error.message);
+    }
+  }
+  
+  // Fallback to straight-line calculation
+  const straightDistance = haversineKm(start.lat, start.lng, end.lat, end.lng);
+  return {
+    distance: straightDistance,
+    isActualRoute: false,
+    duration: Math.round((straightDistance / 80) * 60) // Estimate at 80 km/h average
+  };
 }
 
 function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -632,9 +627,11 @@ module.exports = {
   findRecommendedChargingStation,
   findRecommendedChargingStation_v2,
   calculateDistance,
+  calculateOptimalDistance,
   calculateStraightLineDistance,
   haversineKm,
   buildCumulativeRouteKm,
   projectPointOntoRoute,
-  calculateActualDetour
+  calculateActualDetour,
+  calculateActualRouteDistance
 };
