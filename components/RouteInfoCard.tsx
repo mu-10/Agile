@@ -110,6 +110,13 @@ const RouteInfoCard: React.FC<RouteInfoCardProps> = ({
     }
   };
 
+  function formatMinutes(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m} min`;
+}
+
   // Multi-stop route rendering
   if (allChargingStops.length > 1) {
     const drivingTime = chargingStopInfo?.estimatedTime || 0;
@@ -266,7 +273,7 @@ const RouteInfoCard: React.FC<RouteInfoCardProps> = ({
         <div style={{ marginBottom: "16px" }}>
           <div style={styles.summaryRow}>
             <span style={{ fontSize: "20px", fontWeight: "600", marginRight: "8px" }}>
-              {routeDetails.totalTravelTime} min
+              {formatMinutes(routeDetails.totalTravelTime)}
             </span>
             <span style={{ fontSize: "16px", color: isDarkMode ? "#d1d5db" : "#5f6368" }}>
               ({Math.round(routeDetails.totalDistanceViaStation)} km)
