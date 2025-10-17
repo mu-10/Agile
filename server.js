@@ -280,7 +280,12 @@ app.post("/api/validate-station-reachability", async (req, res) => {
 });
 
 const server = app.listen(config.server.port, () => {
-  console.log(`Backend running on ${config.server.getUrl()}`);
+  if (config.debugMode) {
+    console.log(`Backend running on ${config.server.getUrl()} in debug mode`);
+  } else {
+    console.log(`Backend running on ${config.server.getUrl()}`);
+  }
+  
   if (db) {
     console.log(`Database ready with ${db.getStationCount()} stations available`);
   } else {

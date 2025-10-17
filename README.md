@@ -4,7 +4,6 @@
 A project made for course DAT257 Agile software project management.
 
 ## Get started
-
 1. Install dependencies
 
    ```bash
@@ -42,6 +41,12 @@ A project made for course DAT257 Agile software project management.
 
 ## Testing
 
+### Debug mode
+   To see console logs from chargingRecommendationService.js, set
+   ```bash
+   debugMode: false
+   ```
+   To true in config\appConfig.ts
 ### Running Tests
 
 ```bash

@@ -5,6 +5,8 @@
 require('dotenv').config();
 
 const config = {
+  debugMode: false, // Debug file for chargingRecommendationService.js
+  
   // Server configuration - matches what server.js expects
   server: {
     port: process.env.PORT || 4000, // Use PORT from .env or default to 4000

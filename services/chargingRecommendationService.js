@@ -1,9 +1,7 @@
-﻿// Recommended Charging Station Logic
-const fetch = require("node-fetch");
+﻿const fetch = require("node-fetch");
+import config from '../config/index.js';
 
-// Constants and utilities
-const EARTH_KM = 6371;
-
+// Straight line formula
 function haversineKm(lat1, lon1, lat2, lon2) {
   const toRad = Math.PI / 180;
   const dLat = (lat2 - lat1) * toRad;
@@ -12,7 +10,7 @@ function haversineKm(lat1, lon1, lat2, lon2) {
   const rLat2 = lat2 * toRad;
 
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(rLat1) * Math.cos(rLat2) * Math.sin(dLon / 2) ** 2;
-  return EARTH_KM * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 // Backward compatibility
@@ -116,19 +114,25 @@ function planGreedyStops({ routePoints, totalRouteKm, allStations, startRouteKm 
   while (stops.length < maxStops) {
     const reachableKm = curKm + range * safeFactor;
 
-    console.log(`  Planning hop ${stops.length + 1}: from ${curKm.toFixed(1)}km can reach ${reachableKm.toFixed(1)}km along route`);
+    if (config.debugMode) {console.log(`  Planning hop ${stops.length + 1}: from ${curKm.toFixed(1)}km can reach ${reachableKm.toFixed(1)}km along route`);}
 
     // RE-FILTER stations for this hop - start with appropriate proximity based on hop number
     let maxDeviationKm = stops.length === 0 ? 2 : 5; // 2km for first hop, 5km for subsequent
     let stationsOnRoute = mapStationsToRoute(routePoints, cumKm, allStations, maxDeviationKm);
     
-    console.log(`  Re-filtering: Found ${stationsOnRoute.length} stations within ${maxDeviationKm}km of route for this hop`);
-    
+    if (config.debugMode) {
+      console.log(`  Re-filtering: Found ${stationsOnRoute.length} stations within ${maxDeviationKm}km of route for this hop`);
+    }
+
     // If no stations found and this isn't the first hop, try more flexible proximity
     if (stationsOnRoute.length === 0 && stops.length > 0) {
       maxDeviationKm = 15; // Very flexible for sparse areas
       stationsOnRoute = mapStationsToRoute(routePoints, cumKm, allStations, maxDeviationKm);
-      console.log(`  Expanded to ${maxDeviationKm}km: Found ${stationsOnRoute.length} stations`);
+
+      if (config.debugMode) {
+        console.log(`  Expanded to ${maxDeviationKm}km: Found ${stationsOnRoute.length} stations`);
+      }
+      
     }
 
     // Sort stations by routeKm ascending
@@ -139,10 +143,14 @@ function planGreedyStops({ routePoints, totalRouteKm, allStations, startRouteKm 
     const minRouteKm = Math.max(0, curKm - 10);
     const reachableStations = stationsSorted.filter(s => s.routeKm >= minRouteKm && s.routeKm <= reachableKm && !stops.some(x => x.id === s.id));
 
-    console.log(`  Found ${reachableStations.length} reachable stations between ${minRouteKm.toFixed(1)}km and ${reachableKm.toFixed(1)}km (allowing 10km backtrack)`);
+    if (config.debugMode) {
+      console.log(`  Found ${reachableStations.length} reachable stations between ${minRouteKm.toFixed(1)}km and ${reachableKm.toFixed(1)}km (allowing 10km backtrack)`);
+    }
     
     if (reachableStations.length === 0) {
-      console.log(`  No stations reachable in range. Station distribution along route:`);
+      if (config.debugMode) {
+        console.log(`  No stations reachable in range. Station distribution along route:`);
+      }
       
       // Show stations in different sections of the route
       const sections = [
@@ -154,10 +162,16 @@ function planGreedyStops({ routePoints, totalRouteKm, allStations, startRouteKm 
       
       sections.forEach(section => {
         const sectionStations = stationsSorted.filter(s => s.routeKm >= section.min && s.routeKm < section.max);
+
+        if (config.debugMode) {
         console.log(`    ${section.name}: ${sectionStations.length} stations`);
+        }
+
         if (sectionStations.length > 0) {
+          if (config.debugMode) {
           console.log(`      First: ${sectionStations[0].title || 'Unknown'} at ${sectionStations[0].routeKm.toFixed(1)}km`);
           console.log(`      Last: ${sectionStations[sectionStations.length-1].title || 'Unknown'} at ${sectionStations[sectionStations.length-1].routeKm.toFixed(1)}km`);
+          }
         }
       });
       
@@ -178,20 +192,29 @@ function planGreedyStops({ routePoints, totalRouteKm, allStations, startRouteKm 
         : forwardStations[forwardStations.length - 1]; // Furthest with any forward progress
     } else {
       // No forward stations - this is a gap in coverage
-      console.log(`  ❌ No stations ahead of current position ${curKm.toFixed(1)}km`);
+      if (config.debugMode) {
+        console.log(`  No stations ahead of current position ${curKm.toFixed(1)}km`);
+      }
       return { stops, reachable: false, reason: 'no_forward_stations' };
     }
     
-    console.log(`  Selected: ${next.title || 'Unknown'} at ${next.routeKm.toFixed(1)}km (${next.routeDeviationKm.toFixed(1)}km from route)`);
+    if (config.debugMode) {
+      console.log(`  Selected: ${next.title || 'Unknown'} at ${next.routeKm.toFixed(1)}km (${next.routeDeviationKm.toFixed(1)}km from route)`);   
+    }
 
     // Check if we're making insufficient progress (stuck in a loop)
     if (stops.length > 0) {
       const lastStopKm = stops[stops.length - 1].routeKm;
       const progress = next.routeKm - lastStopKm;
-      console.log(`  Progress from last stop: ${progress.toFixed(1)}km`);
+
+      if (config.debugMode) {
+        console.log(`  Progress from last stop: ${progress.toFixed(1)}km`);
+      }
       
       if (Math.abs(progress) < 5) { // Less than 5km progress
-        console.log(`  ❌ Insufficient progress (${progress.toFixed(1)}km), ending planning`);
+        if (config.debugMode) {
+        console.log(`Insufficient progress (${progress.toFixed(1)}km), ending planning`);      
+        }
         return { stops, reachable: false, reason: 'insufficient_progress' };
       }
     }
@@ -206,13 +229,20 @@ function planGreedyStops({ routePoints, totalRouteKm, allStations, startRouteKm 
     const remainingDistance = totalRouteKm - curKm;
     const usableRange = range * safeFactor;
     
+    if (config.debugMode) {
     console.log(`  After charging to ${(chargePercent * 100).toFixed(0)}% at ${next.title}: position ${curKm.toFixed(1)}km, remaining ${remainingDistance.toFixed(1)}km, usable range ${usableRange.toFixed(1)}km`);
+    }
     
     if (usableRange >= remainingDistance) {
-      console.log(`  ✅ Can reach destination from this station`);
+      if (config.debugMode) {
+        console.log(`   Can reach destination from this station`);
+      }
+
       return { stops, reachable: true };
     } else {
-      console.log(`  🔋 Need additional charging stops`);
+      if (config.debugMode) {
+        console.log(`   Need additional charging stops`); 
+      }
     }
   }
 
@@ -238,7 +268,7 @@ async function calculateActualRouteDistance(start, end, googleMapsApiKey) {
       routePoints.push({ lat, lng });
     }
     
-    console.log(`Created ${routePoints.length} route points for highway approximation`);
+    if (config.debugMode) {console.log(`Created ${routePoints.length} route points for highway approximation`); }
     
     return {
       distance: straightDistance * 1.2, // Highway routes are typically 20% longer than straight-line
@@ -247,17 +277,19 @@ async function calculateActualRouteDistance(start, end, googleMapsApiKey) {
     };
   }
 
-  console.log('Using Google Maps API for route calculation');
+  if (config.debugMode) {
+    console.log('Using Google Maps API for route calculation');    
+  }
 
   try {
     const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${start.lat},${start.lng}&destination=${end.lat},${end.lng}&mode=driving&alternatives=false&key=${googleMapsApiKey}`;
-    
-    console.log('Making Google Maps API request...');
+      if (config.debugMode) {console.log('Making Google Maps API request...');}
+
     const response = await fetch(url);
     const data = await response.json();
 
     if (data.status === 'OK' && data.routes.length > 0) {
-      console.log('✅ Google Maps API returned valid route data');
+        if (config.debugMode) {console.log(' Google Maps API returned valid route data');}
       const route = data.routes[0];
       const leg = route.legs[0];
       
@@ -267,7 +299,7 @@ async function calculateActualRouteDistance(start, end, googleMapsApiKey) {
         // Decode polyline to get route coordinates
         const decoded = decodePolyline(route.overview_polyline.points);
         routePoints.push(...decoded);
-        console.log(`Decoded ${decoded.length} route points from Google Maps polyline`);
+        if (config.debugMode) {console.log(`Decoded ${decoded.length} route points from Google Maps polyline`);}
       }
       
       return {
@@ -297,7 +329,7 @@ async function calculateActualRouteDistance(start, end, googleMapsApiKey) {
   }
 }
 
-// Simple polyline decoder
+// Polyline decoder
 function decodePolyline(encoded) {
   const points = [];
   let index = 0, lat = 0, lng = 0;
@@ -357,29 +389,30 @@ function isStationNearRoute(station, routePoints, maxDeviationKm = 2) {
 
 // High-level orchestrator: accepts routePoints or fallback straight-line + stations list
 async function findRecommendedChargingStation_v2(start, end, batteryRangeKm, batteryCapacityKm, allStations, routePoints = [], chargePercent = 0.8) {
-  console.log(`\n=== NEW CHARGING LOGIC V2 ===`);
-  console.log(`Route: ${start.lat},${start.lng} -> ${end.lat},${end.lng}`);
-  console.log(`Current Battery Range: ${batteryRangeKm} km`);
-  console.log(`Maximum Battery Capacity: ${batteryCapacityKm} km`);
-  console.log(`Charging to: ${(chargePercent * 100).toFixed(0)}% of capacity`);
+  if (config.debugMode) {
+    console.log(`Route: ${start.lat},${start.lng} -> ${end.lat},${end.lng}`);
+    console.log(`Current Battery Range: ${batteryRangeKm} km`);
+    console.log(`Maximum Battery Capacity: ${batteryCapacityKm} km`);
+    console.log(`Charging to: ${(chargePercent * 100).toFixed(0)}% of capacity`);        
+  }
   
   // If routePoints not provided, this should not happen now since we always try Google Maps first
   if (!routePoints || routePoints.length < 2) {
-    console.warn(`⚠️  No route points provided - this should not happen with Google Maps integration`);
+      if (config.debugMode) {console.warn(`  No route points provided - this should not happen with Google Maps integration`);}
     // Emergency fallback: create simple route from start -> end
     routePoints = [
       { lat: start.lat, lng: start.lng },
       { lat: end.lat, lng: end.lng }
     ];
-    console.log(`Created emergency fallback route with ${routePoints.length} points`);
+    if (config.debugMode) {console.log(`Created emergency fallback route with ${routePoints.length} points`);}
   } else {
-    console.log(`✅ Using route with ${routePoints.length} points (Google Maps or approximation)`);
+    if (config.debugMode) {console.log(` Using route with ${routePoints.length} points (Google Maps or approximation)`);}
   }
 
   const cumKm = buildCumulativeRouteKm(routePoints);
   const totalRouteKm = cumKm[cumKm.length - 1];
   
-  console.log(`Total route distance: ${totalRouteKm.toFixed(1)} km`);
+  if (config.debugMode) {console.log(`Total route distance: ${totalRouteKm.toFixed(1)} km`);}
 
   // map stations onto route with a starting proximity filter (2km)
   let proxStations = allStations
@@ -388,30 +421,30 @@ async function findRecommendedChargingStation_v2(start, end, batteryRangeKm, bat
 
   // First try strict 2km deviation
   let stationsOnRoute = mapStationsToRoute(routePoints, cumKm, proxStations, 2);
-  console.log(`Found ${stationsOnRoute.length} stations within 2km of route`);
+  if (config.debugMode) {console.log(`Found ${stationsOnRoute.length} stations within 2km of route`);}
 
   // If insufficient stations, relax to 5km then 15km for long routes
   if (stationsOnRoute.length < 20 && totalRouteKm > 200) {
-    console.log(`Only ${stationsOnRoute.length} stations within 2km for long route, trying 5km proximity...`);
+    if (config.debugMode) {console.log(`Only ${stationsOnRoute.length} stations within 2km for long route, trying 5km proximity...`);}
     const stations5km = mapStationsToRoute(routePoints, cumKm, proxStations, 5);
     console.log(`Found ${stations5km.length} stations within 5km of route`);
     stationsOnRoute = stations5km;
     
     if (stationsOnRoute.length < 30) {
-      console.log(`Still only ${stationsOnRoute.length} stations, trying 15km proximity for sparse areas...`);
+      if (config.debugMode) {console.log(`Still only ${stationsOnRoute.length} stations, trying 15km proximity for sparse areas...`);}
       const stations15km = mapStationsToRoute(routePoints, cumKm, proxStations, 15);
-      console.log(`Found ${stations15km.length} stations within 15km of route`);
+      if (config.debugMode) {console.log(`Found ${stations15km.length} stations within 15km of route`);}
       stationsOnRoute = stations15km;
     }
   }
 
   // Quick check: can we reach destination without charging?
   if (batteryRangeKm >= totalRouteKm) {
-    console.log(`✅ NO CHARGING NEEDED`);
+      if (config.debugMode) {console.log(` NO CHARGING NEEDED`);}
     return {
       success: true,
       needsCharging: false,
-      message: 'No charging needed - trip is within vehicle range',
+      message: 'No charging needed - trip is within battery range',
       totalDistance: Math.round(totalRouteKm * 10) / 10,
       rangeAtArrival: Math.round((batteryRangeKm - totalRouteKm) * 10) / 10
     };
@@ -419,18 +452,18 @@ async function findRecommendedChargingStation_v2(start, end, batteryRangeKm, bat
 
   // If charging to specified percentage would cover the trip, recommend a single convenient station near start (within 50km & near route)
   if (batteryCapacityKm * chargePercent >= totalRouteKm) {
-    console.log(`✅ SINGLE CHARGE NEEDED`);
+    if (config.debugMode) {console.log(` SINGLE CHARGE NEEDED`);}
     // find station near the start (within 50 km straight-line) and near route
     const nearStart = stationsOnRoute
       .map(s => ({ ...s, distFromStartKm: haversineKm(start.lat, start.lng, s.latitude, s.longitude) }))
       .filter(s => s.distFromStartKm <= 50)
       .sort((a, b) => a.distFromStartKm - b.distFromStartKm);
-
-    console.log(`Found ${nearStart.length} stations near start (within 50km) and on route`);
+    if (config.debugMode) {console.log(`Found ${nearStart.length} stations near start (within 50km) and on route`);}
 
     if (nearStart.length > 0) {
       const selectedStation = nearStart[0];
-      console.log(`✅ Selected: ${selectedStation.title || 'Unknown'} (${selectedStation.distFromStartKm.toFixed(1)}km from start, ${selectedStation.routeDeviationKm.toFixed(1)}km from route)`);
+
+      if (config.debugMode) {console.log(` Selected: ${selectedStation.title || 'Unknown'} (${selectedStation.distFromStartKm.toFixed(1)}km from start, ${selectedStation.routeDeviationKm.toFixed(1)}km from route)`);}
       
       return {
         success: true,
@@ -445,11 +478,11 @@ async function findRecommendedChargingStation_v2(start, end, batteryRangeKm, bat
   }
 
   // Multi-stop planning: greedy on stations projected onto route
-  console.log(`🔋 MULTIPLE CHARGES NEEDED`);
-  
+    if (config.debugMode) {console.log(` MULTIPLE CHARGES NEEDED`);}
+
   // Map start position to routeKm too (so we handle if start is not exactly on route)
   const startProj = projectPointOntoRoute(routePoints, cumKm, { lat: start.lat, lng: start.lng });
-  console.log(`Start position projected to ${startProj.routeKm.toFixed(1)}km along route`);
+  if (config.debugMode) {console.log(`Start position projected to ${startProj.routeKm.toFixed(1)}km along route`);}
   
   const plan = planGreedyStops({
     routePoints,
@@ -464,11 +497,11 @@ async function findRecommendedChargingStation_v2(start, end, batteryRangeKm, bat
   });
 
   if (!plan.reachable) {
-    console.log(`❌ Unable to plan complete route: ${plan.reason}`);
+    if (config.debugMode) {console.log(` Unable to plan complete route: ${plan.reason}`);}
     
     // If we got some stops but hit limits, return partial route with warning
     if (plan.stops.length > 0 && plan.reason === 'too_many_stops') {
-      console.log(`⚠️  Returning partial route with ${plan.stops.length} stops`);
+      if (config.debugMode) {console.log(`  Returning partial route with ${plan.stops.length} stops`);}
       return {
         success: true,
         needsCharging: true,
@@ -484,9 +517,9 @@ async function findRecommendedChargingStation_v2(start, end, batteryRangeKm, bat
     return { success: false, needsCharging: true, message: 'Unable to plan route with available stations', reason: plan.reason };
   }
 
-  console.log(`✅ Journey planned with ${plan.stops.length} charging stop(s):`);
+  if (config.debugMode) {console.log(` Journey planned with ${plan.stops.length} charging stop(s):`);}
   plan.stops.forEach((stop, i) => {
-    console.log(`  ${i + 1}. ${stop.title || 'Unknown'} - ${stop.routeKm.toFixed(1)}km along route, ${stop.routeDeviationKm.toFixed(1)}km deviation`);
+    if (config.debugMode) {console.log(`  ${i + 1}. ${stop.title || 'Unknown'} - ${stop.routeKm.toFixed(1)}km along route, ${stop.routeDeviationKm.toFixed(1)}km deviation`);}
   });
 
   return {
@@ -511,7 +544,7 @@ async function findRecommendedChargingStation(start, end, batteryRange, batteryC
     let estimatedTime = null;
     let actualDistance = null;
     
-    console.log('🗺️  Attempting to get route data from Google Maps API...');
+    if (config.debugMode) {console.log('  Attempting to get route data from Google Maps API...');}
     
     if (googleMapsApiKey) {
       const routeData = await calculateActualRouteDistance(start, end, googleMapsApiKey);
@@ -520,17 +553,17 @@ async function findRecommendedChargingStation(start, end, batteryRange, batteryC
       actualDistance = routeData.distance;
       
       if (routePoints.length > 0) {
-        console.log(`✅ Using Google Maps route data with ${routePoints.length} points`);
+        if (config.debugMode) {console.log(` Using Google Maps route data with ${routePoints.length} points`);}
       } else {
-        console.log('⚠️  Google Maps API available but no route points returned');
+        if (config.debugMode) {console.log('  Google Maps API available but no route points returned');}
       }
     } else {
-      console.log('❌ No Google Maps API key provided');
+      if (config.debugMode) {console.log(' No Google Maps API key provided');}
     }
     
     // Only fall back to approximation if Google Maps completely failed
     if (routePoints.length === 0) {
-      console.log('📍 Creating route approximation as fallback...');
+      if (config.debugMode) {console.log(' Creating route approximation as fallback...');}
       routePoints = await createRouteApproximation(start, end);
       
       // Calculate distance from approximation if we don't have it from Google Maps
@@ -565,7 +598,7 @@ async function findRecommendedChargingStation(start, end, batteryRange, batteryC
     return result;
     
   } catch (error) {
-    console.error('Charging recommendation error:', error);
+    if (config.debugMode) {console.error('Charging recommendation error:', error);}
     return { success: false, message: `Error: ${error.message}` };
   }
 }
@@ -587,7 +620,7 @@ async function createRouteApproximation(start, end) {
     routePoints.push({ lat, lng });
   }
   
-  console.log(`Created ${routePoints.length} route points for approximation`);
+  if (config.debugMode) {console.log(`Created ${routePoints.length} route points for approximation`);}
   return routePoints;
 }
 
@@ -602,7 +635,7 @@ async function calculateOptimalDistance(start, end, googleMapsApiKey = null) {
         duration: routeData.duration
       };
     } catch (error) {
-      console.warn('Google Maps distance calculation failed, using straight-line:', error.message);
+      if (config.debugMode) {console.warn('Google Maps distance calculation failed, using straight-line:', error.message);}
     }
   }
   
@@ -635,3 +668,4 @@ module.exports = {
   calculateActualDetour,
   calculateActualRouteDistance
 };
+
