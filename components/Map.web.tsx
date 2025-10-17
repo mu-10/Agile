@@ -101,6 +101,7 @@ export default function MapWeb({
   const [duration, setDuration] = useState<string | null>(null);
   const [totalDistance, setTotalDistance] = useState<string | null>(null);
   const [totalDuration, setTotalDuration] = useState<string | null>(null);
+  const [routeSegmentsReady, setRouteSegmentsReady] = useState<boolean>(false);
 
   // store the initial map center so it doesn't keep re-centering
   const initialCenter = useRef<google.maps.LatLngLiteral | null>(null);
@@ -197,6 +198,7 @@ export default function MapWeb({
           setAllChargingStops(data.chargingStops); // All stops for display
           setAlternativeStations(data.alternatives || []); // Keep alternatives separate
           setShowChargingRoute(true);
+          setShowChargingPanels(true); // Enable charging panels for UI
           
           // Calculate route through multiple charging stops
           await calculateMultiStopRoute(data.chargingStops, startCoords, endCoords);
@@ -207,6 +209,7 @@ export default function MapWeb({
           setAllChargingStops([data.chargingStation]); // Single stop in array
           setAlternativeStations(data.alternatives || []);
           setShowChargingRoute(true);
+          setShowChargingPanels(true); // Enable charging panels for UI
           
           // Calculate route via single charging station
           await calculateChargingRoute(data.chargingStation, startCoords, endCoords);
@@ -214,13 +217,19 @@ export default function MapWeb({
           setAutoSelectedChargingStation(null);
           setAllChargingStops([]);
           setShowChargingRoute(false);
+          setShowChargingPanels(false);
           setChargingRouteResponse(null);
         }
       } else {
         setAutoSelectedChargingStation(null);
         setAllChargingStops([]);
         setShowChargingRoute(false);
+        setShowChargingPanels(false);
         setChargingRouteResponse(null);
+        setAlternativeRoutes([]);
+        setRouteSegmentsReady(false);
+        setAlternativeRoutes([]);
+        setRouteSegmentsReady(false);
       }
       
       setBackendError(false);
@@ -230,6 +239,9 @@ export default function MapWeb({
       setAutoSelectedChargingStation(null);
       setAllChargingStops([]);
       setShowChargingRoute(false);
+      setShowChargingPanels(false);
+      setAlternativeRoutes([]);
+      setRouteSegmentsReady(false);
       setBackendError(true);
     } finally {
       setLoadingChargingStop(false);
@@ -348,56 +360,138 @@ export default function MapWeb({
     try {
       console.log(`Calculating route through ${chargingStops.length} charging stops`);
       
-      // Create waypoints from charging stops
-      const waypoints = chargingStops.map(stop => ({
-        location: { lat: stop.latitude, lng: stop.longitude },
-        stopover: true
-      }));
-
-      // Calculate route with multiple waypoints
-      await new Promise<void>((resolve, reject) => {
+      // Clear previous routes to avoid flickering
+      setRouteSegmentsReady(false);
+      setAlternativeRoutes([]);
+      setChargingRouteResponse(null);
+      
+      if (chargingStops.length === 1) {
+        // Single charging stop - use the existing single-stop logic for better visualization
+        await calculateChargingRoute(chargingStops[0], startCoords, endCoords);
+        setRouteSegmentsReady(true);
+        return;
+      }
+      
+      // For multiple stops, calculate individual segments
+      const routeSegments: google.maps.DirectionsResult[] = [];
+      let totalDist = 0;
+      let totalDur = 0;
+      
+      // Calculate route from start to first charging stop
+      const firstStopRoute = await new Promise<google.maps.DirectionsResult>((resolve, reject) => {
         directionsServiceRef.current!.route(
           {
             origin: startCoords,
-            destination: endCoords,
-            waypoints: waypoints,
+            destination: { lat: chargingStops[0].latitude, lng: chargingStops[0].longitude },
             travelMode: google.maps.TravelMode.DRIVING,
-            optimizeWaypoints: false, // Keep the order from the algorithm
           },
           (result, status) => {
             if (status === "OK" && result) {
-              console.log('Multi-stop route calculated successfully');
-              setDirectionsResponse(result);
-              
-              // Calculate total distance and duration including charging time
-              let totalDist = 0;
-              let totalDur = 0;
-              result.routes[0].legs.forEach(leg => {
-                if (leg.distance) totalDist += leg.distance.value;
-                if (leg.duration) totalDur += leg.duration.value;
-              });
-              
-              // Add estimated charging time for each stop (except the last one which is destination)
-              const totalChargingTime = chargingStops.length * 30 * 60; // 30 minutes per stop in seconds
-              const totalTravelTime = Math.round((totalDur + totalChargingTime) / 60); // in minutes
-              
-              console.log(`Total route: ${(totalDist/1000).toFixed(1)}km, ${totalTravelTime}min (including ${chargingStops.length} charging stops)`);
-              
-              setDistance(`${(totalDist / 1000).toFixed(1)} km`);
-              setDuration(`${totalTravelTime} min`);
-              
-              resolve();
+              resolve(result);
             } else {
-              console.error("Multi-stop route calculation failed:", status);
-              // Fallback to single stop if multi-stop fails
-              if (chargingStops.length > 0) {
-                calculateChargingRoute(chargingStops[0], startCoords, endCoords);
-              }
-              reject(new Error(`Multi-stop route calculation failed: ${status}`));
+              reject(new Error(`Route to first charging stop failed: ${status}`));
             }
           }
         );
       });
+      
+      routeSegments.push(firstStopRoute);
+      if (firstStopRoute.routes[0].legs[0].distance) {
+        totalDist += firstStopRoute.routes[0].legs[0].distance.value;
+      }
+      if (firstStopRoute.routes[0].legs[0].duration) {
+        totalDur += firstStopRoute.routes[0].legs[0].duration.value;
+      }
+      
+      // Calculate routes between charging stops
+      for (let i = 0; i < chargingStops.length - 1; i++) {
+        const segmentRoute = await new Promise<google.maps.DirectionsResult>((resolve, reject) => {
+          directionsServiceRef.current!.route(
+            {
+              origin: { lat: chargingStops[i].latitude, lng: chargingStops[i].longitude },
+              destination: { lat: chargingStops[i + 1].latitude, lng: chargingStops[i + 1].longitude },
+              travelMode: google.maps.TravelMode.DRIVING,
+            },
+            (result, status) => {
+              if (status === "OK" && result) {
+                resolve(result);
+              } else {
+                reject(new Error(`Route between charging stops ${i} and ${i + 1} failed: ${status}`));
+              }
+            }
+          );
+        });
+        
+        routeSegments.push(segmentRoute);
+        if (segmentRoute.routes[0].legs[0].distance) {
+          totalDist += segmentRoute.routes[0].legs[0].distance.value;
+        }
+        if (segmentRoute.routes[0].legs[0].duration) {
+          totalDur += segmentRoute.routes[0].legs[0].duration.value;
+        }
+      }
+      
+      // Calculate route from last charging stop to destination
+      const lastStopRoute = await new Promise<google.maps.DirectionsResult>((resolve, reject) => {
+        directionsServiceRef.current!.route(
+          {
+            origin: { lat: chargingStops[chargingStops.length - 1].latitude, lng: chargingStops[chargingStops.length - 1].longitude },
+            destination: endCoords,
+            travelMode: google.maps.TravelMode.DRIVING,
+          },
+          (result, status) => {
+            if (status === "OK" && result) {
+              resolve(result);
+            } else {
+              reject(new Error(`Route from last charging stop failed: ${status}`));
+            }
+          }
+        );
+      });
+      
+      routeSegments.push(lastStopRoute);
+      if (lastStopRoute.routes[0].legs[0].distance) {
+        totalDist += lastStopRoute.routes[0].legs[0].distance.value;
+      }
+      if (lastStopRoute.routes[0].legs[0].duration) {
+        totalDur += lastStopRoute.routes[0].legs[0].duration.value;
+      }
+      
+      console.log('Multi-stop route segments calculated successfully');
+      console.log(`Total route segments: ${routeSegments.length}`);
+      console.log(`First segment: Start → ${chargingStops[0].title || 'Stop 1'}`);
+      console.log(`Last segment: ${chargingStops[chargingStops.length - 1].title || 'Last Stop'} → End`);
+      
+      // Set the first segment as the main route (blue color)
+      setDirectionsResponse(firstStopRoute);
+      
+      // Set the last segment as the charging route (green color)
+      setChargingRouteResponse(lastStopRoute);
+      
+      // Store intermediate segments as alternative routes for rendering (orange color)
+      if (routeSegments.length >= 3) {
+        const intermediateSegments = routeSegments.slice(1, -1);
+        console.log(`Setting ${intermediateSegments.length} intermediate segments for orange rendering`);
+        intermediateSegments.forEach((segment, index) => {
+          console.log(`  Intermediate segment ${index + 1}: ${chargingStops[index].title || `Stop ${index + 1}`} → ${chargingStops[index + 1].title || `Stop ${index + 2}`}`);
+        });
+        setAlternativeRoutes(intermediateSegments);
+      } else {
+        console.log('No intermediate segments (less than 3 total segments)');
+        setAlternativeRoutes([]);
+      }
+      
+      // Add estimated charging time for each stop
+      const totalChargingTime = chargingStops.length * 30 * 60; // 30 minutes per stop in seconds
+      const totalTravelTime = Math.round((totalDur + totalChargingTime) / 60); // in minutes
+      
+      console.log(`Total route: ${(totalDist/1000).toFixed(1)}km, ${totalTravelTime}min (including ${chargingStops.length} charging stops)`);
+      
+      setDistance(`${(totalDist / 1000).toFixed(1)} km`);
+      setDuration(`${totalTravelTime} min`);
+      
+      // Mark route segments as ready
+      setRouteSegmentsReady(true);
     } catch (error) {
       console.error("Error calculating multi-stop route:", error);
       // Fallback to single stop route
@@ -558,18 +652,27 @@ export default function MapWeb({
       station.connections && station.connections.some((conn: any) => selectedConnectorTypes.includes(conn.type))
     );
     
-    // If we have a calculated route, also filter by proximity (2km = 2000m)
-    if (directionsResponse && filtered.length > 0) {
+    // Only filter by route proximity if we have routes and they are ready
+    if (filtered.length > 0 && routeSegmentsReady && (directionsResponse || alternativeRoutes.length > 0 || chargingRouteResponse)) {
       const PROXIMITY_THRESHOLD = 2000; // 2km in meters
       
+      // Collect all routes to check
+      const routesToCheck = [];
+      if (directionsResponse) routesToCheck.push(directionsResponse);
+      if (chargingRouteResponse) routesToCheck.push(chargingRouteResponse);
+      routesToCheck.push(...alternativeRoutes);
+      
       filtered = filtered.filter(station => {
-        const distance = getDistanceToRoute(station.latitude, station.longitude, directionsResponse);
-        return distance <= PROXIMITY_THRESHOLD;
+        // Check if station is close to any route segment
+        return routesToCheck.some(route => {
+          const distance = getDistanceToRoute(station.latitude, station.longitude, route);
+          return distance <= PROXIMITY_THRESHOLD;
+        });
       });
     }
     
     return filtered;
-  }, [stations, selectedConnectorTypes, directionsResponse, getDistanceToRoute]);
+  }, [stations, selectedConnectorTypes, directionsResponse, alternativeRoutes, chargingRouteResponse, routeSegmentsReady, getDistanceToRoute]);
 
   // Function to fetch stations based on map bounds
   const fetchStationsInBounds = useCallback(
@@ -848,14 +951,13 @@ export default function MapWeb({
             }
             
             if (startCoords && endCoords) {
-              // Store the original full route for station filtering
-              setDirectionsResponse(result);
+              // Don't set directions response yet - let charging stop calculation handle it
               console.log('Frontend Google Maps distance:', leg.distance?.text, 'value:', leg.distance?.value);
               // Don't set distance here - wait for backend response
               // setDistance(leg.distance?.text || null);
               setDuration(leg.duration?.text || null);
               
-              // Find charging stop (but don't override the main route)
+              // Find charging stop which will set the appropriate route display
               await findChargingStop(startCoords, endCoords);
             } else {
               // Show direct route anyway
@@ -878,6 +980,8 @@ export default function MapWeb({
             setAutoSelectedChargingStation(null);
             setAllChargingStops([]);
             setChargingRouteResponse(null);
+            setAlternativeRoutes([]);
+            setRouteSegmentsReady(true);
           }
         } else {
           console.error("Directions request failed:", status);
@@ -1131,7 +1235,8 @@ export default function MapWeb({
             options={{ 
               preserveViewport: true,
               polylineOptions: {
-                strokeColor: showChargingPanels ? "#FF6B35" : "#4285F4", // Orange for first leg, blue for single route
+                strokeColor: showChargingPanels && allChargingStops.length > 1 ? "#4285F4" : 
+                           showChargingPanels && allChargingStops.length === 1 ? "#FF6B35" : "#4285F4", // Blue for first segment to charging stop, orange for single stop, blue for normal routes
                 strokeWeight: 6,
                 strokeOpacity: 0.8
               },
@@ -1139,7 +1244,8 @@ export default function MapWeb({
                 icon: {
                   path: google.maps.SymbolPath.CIRCLE,
                   scale: 8,
-                  fillColor: "#FF6B35",
+                  fillColor: showChargingPanels && allChargingStops.length > 1 ? "#4285F4" : 
+                            showChargingPanels && allChargingStops.length === 1 ? "#FF6B35" : "#4285F4",
                   fillOpacity: 1,
                   strokeColor: "#FFFFFF",
                   strokeWeight: 2
@@ -1149,7 +1255,7 @@ export default function MapWeb({
           />
         )}
 
-        {/* Alternative routes - lighter blue color */}
+        {/* Alternative routes - for multi-stop intermediate segments */}
         {alternativeRoutes.map((route, index) => (
           <DirectionsRenderer
             key={`alt-route-${index}`}
@@ -1157,18 +1263,18 @@ export default function MapWeb({
             options={{ 
               preserveViewport: true,
               polylineOptions: {
-                strokeColor: "#87CEEB", // Light blue for alternative routes
-                strokeWeight: 4,
-                strokeOpacity: 0.6
+                strokeColor: showChargingPanels && allChargingStops.length > 1 ? "#FF6B35" : "#87CEEB", // Orange for intermediate charging segments, light blue for regular alternatives
+                strokeWeight: showChargingPanels && allChargingStops.length > 1 ? 6 : 4,
+                strokeOpacity: showChargingPanels && allChargingStops.length > 1 ? 0.8 : 0.6
               },
               markerOptions: {
                 icon: {
                   path: google.maps.SymbolPath.CIRCLE,
-                  scale: 6,
-                  fillColor: "#87CEEB",
-                  fillOpacity: 0.8,
+                  scale: showChargingPanels && allChargingStops.length > 1 ? 8 : 6,
+                  fillColor: showChargingPanels && allChargingStops.length > 1 ? "#FF6B35" : "#87CEEB",
+                  fillOpacity: showChargingPanels && allChargingStops.length > 1 ? 1 : 0.8,
                   strokeColor: "#FFFFFF",
-                  strokeWeight: 1
+                  strokeWeight: showChargingPanels && allChargingStops.length > 1 ? 2 : 1
                 }
               }
             }}
