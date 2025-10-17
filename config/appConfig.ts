@@ -1,6 +1,9 @@
 // Central configuration file for all application settings
 
 export const APP_CONFIG = {
+
+  debugMode: false, // Show console logs in chargingRecommendationService.js
+
   // Server ports
   ports: {
     backend: 4000,
@@ -44,7 +47,7 @@ export const APP_CONFIG = {
       medium: 2000,      // zoom <= 10  
       zoomedIn: 1000,    // zoom > 10
     }
-  }
+  },
 };
 
 // Update base URL when ports change
@@ -68,5 +71,6 @@ export const API_ENDPOINTS = getApiUrls();
 export const MAPS_CONFIG = APP_CONFIG.maps;
 export const DEFAULTS = APP_CONFIG.defaults;
 export const UI_CONFIG = APP_CONFIG.ui;
+export const DEBUG_MODE = APP_CONFIG.debugMode; // Export debugMode
 
 export default APP_CONFIG;

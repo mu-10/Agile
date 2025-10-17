@@ -1,6 +1,6 @@
 import { APP_CONFIG, getApiUrls } from './appConfig';
 
-// Legacy API config - now uses central configuration
+// API config
 const API_CONFIG = {
   // Use centralized URLs
   urls: getApiUrls(),
